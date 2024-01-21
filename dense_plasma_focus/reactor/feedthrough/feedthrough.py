@@ -5,305 +5,133 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-class CylindricElectrode(BasePartObject):
+from dense_plasma_focus.material import Material, QUARTZ, COPPER
+
+class Feedthrough(Compound):
     """
-    A Cylinderical electrode with a fillet at the top.
-    """
-
-    def __init__(
-        self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        fillet_radius: float = 0,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the electrode
-        electrode= Circle(outer_diameter/2)
-        if inner_diameter > 0:
-            electrode = electrode - Circle(inner_diameter/2)
-        electrode = extrude(electrode, amount=height)
-
-        # Create the fillet
-        electrode = fillet(electrode.edges().group_by(Axis.Z)[-1], radius=fillet_radius)
-
-        super().__init__(
-            part=electrode, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to base
-        RigidJoint(
-            label="base",
-            to_part=self,
-            joint_location=Location((0, 0, 0)),
-        )
-
-class SpokedElectrode(BasePartObject):
-    """
-    A Cylinderical Electrode with spokes
+    Feed through for the vacuum chamber
     """
 
     def __init__(
         self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        nr_spokes: int,
-        pitch: float = 200.0,
-        fillet_radius: float = 0.1,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
+        anode_outer_diameter: float,
+        cathode_inner_diameter: float,
+        cathode_outer_diameter: float,
+        insulator_thickness: float,
+        feedthrough_length: float,
+        cable_diameter: float = 2.5,
+        cable_insulator_thickness: float = 0.5,
+        electrode_material: Material = COPPER,
+        insulator_material: Material = QUARTZ,
     ):
-        context: BuildPart = BuildPart._get_context()
 
-        # Get radius of electrode center
-        polar_radius = (outer_diameter + inner_diameter)/4
+        # Create the anode feedthrough
+        anode_feedthrough = Circle(anode_outer_diameter/2)
+        anode_feedthrough = extrude(anode_feedthrough, amount=feedthrough_length)
+        anode_feedthrough.label = "anode_feedthrough"
+        anode_feedthrough.material = electrode_material
+        anode_feedthrough.color = Color(electrode_material.color)
 
-        # Create circle for base of electrode
-        base = Circle((outer_diameter - inner_diameter)/4)
+        # Create loft between anode feedthrough and cable
+        anode_cable = [
+            Location((0, 0, feedthrough_length)) * Circle(anode_outer_diameter/2),
+            Location((cathode_outer_diameter/2 - cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)) * Circle(cable_diameter/2),
+        ]
+        anode_cable = loft(anode_cable)
+        anode_cable.label = "anode_cable"
+        anode_cable.material = electrode_material
+        anode_cable.color = Color(electrode_material.color)
 
-        # Create the helix path
-        path = Helix(pitch=pitch, height=height, radius=outer_diameter/2)
-        
-        # Create the electrode 
-        spokes = [loc * base for loc in PolarLocations(radius=polar_radius, count=nr_spokes)]
-        paths = [loc * path for loc in PolarLocations(radius=polar_radius, count=nr_spokes)]
+        # Create insulator between anode and cathode
+        anode_cathod_insulator = Circle(cathode_inner_diameter/2)
+        anode_cathod_insulator = anode_cathod_insulator - Circle(anode_outer_diameter/2)
+        anode_cathod_insulator = extrude(anode_cathod_insulator, amount=feedthrough_length)
+        anode_cathod_insulator.label = "anode_cathode_insulator"
+        anode_cathod_insulator.material = insulator_material
+        anode_cathod_insulator.color = Color(insulator_material.color)
 
-        # Sweep the spokes
-        spokes = [sweep(s, path=p) for s, p in zip(spokes, paths)]
 
-        # Create the electrode
-        electrode = Part() + spokes
+        # Create anode cable insulator
+        anode_cable_insulator = [
+            Location((0, 0, feedthrough_length)) * Circle(cathode_inner_diameter/2),
+            Location((cathode_outer_diameter/2 - cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)) * Circle(cable_diameter/2 + cable_insulator_thickness),
+        ]
+        anode_cable_insulator = loft(anode_cable_insulator)
+        anode_cable_insulator = anode_cable_insulator - anode_cable
+        anode_cable_insulator.label = "anode_cable_insulator"
+        anode_cable_insulator.material = insulator_material
+        anode_cable_insulator.color = Color(insulator_material.color)
 
-        # Create the fillet
-        electrode = fillet(electrode.edges().group_by(Axis.Z)[-1], radius=fillet_radius)
+        # Create the cathode feedthrough
+        cathode_feedthrough = Circle(cathode_outer_diameter/2)
+        cathode_feedthrough = cathode_feedthrough - Circle(cathode_inner_diameter/2)
+        cathode_feedthrough = extrude(cathode_feedthrough, amount=feedthrough_length)
+        cathode_feedthrough.label = "cathode_feedthrough"
+        cathode_feedthrough.material = electrode_material
+        cathode_feedthrough.color = Color(electrode_material.color)
 
+        # Create the loft between cathode feedthrough and cable
+        cathode_cable = [
+            Location((0, 0, feedthrough_length)) * Circle(cathode_outer_diameter/2),
+            Location((-cathode_outer_diameter/2 + cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)) * Circle(cable_diameter/2),
+        ]
+        cathode_cable = loft(cathode_cable)
+        cathode_cable = cathode_cable - (anode_cable + anode_cable_insulator)
+        cathode_cable.label = "cathode_cable"
+        cathode_cable.material = electrode_material
+        cathode_cable.color = Color(electrode_material.color)
+
+        # Create insulator between cathode and vacuum chamber
+        cathode_vacuum_insulator = Circle(cathode_outer_diameter/2 + insulator_thickness)
+        cathode_vacuum_insulator = cathode_vacuum_insulator - Circle(cathode_outer_diameter/2)
+        cathode_vacuum_insulator = extrude(cathode_vacuum_insulator, amount=feedthrough_length)
+        cathode_vacuum_insulator.label = "cathode_vacuum_insulator"
+        cathode_vacuum_insulator.material = insulator_material
+        cathode_vacuum_insulator.color = Color(insulator_material.color)
+
+        # Create cathode cable insulator
+        cathode_cable_insulator = [
+            Location((0, 0, feedthrough_length)) * Circle(cathode_outer_diameter/2 + insulator_thickness),
+            Location((-cathode_outer_diameter/2 + cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)) * Circle(cable_diameter/2 + cable_insulator_thickness),
+        ]
+        cathode_cable_insulator = loft(cathode_cable_insulator)
+        cathode_cable_insulator = cathode_cable_insulator - (anode_cable + anode_cable_insulator + cathode_cable)
+        cathode_cable_insulator.label = "cathode_cable_insulator"
+        cathode_cable_insulator.material = insulator_material
+        cathode_cable_insulator.color = Color(insulator_material.color)
+
+        # Call super constructor
         super().__init__(
-            part=electrode, rotation=rotation, align=tuplify(align, 3), mode=mode
+            label="feedthrough",
+            children=[
+                anode_feedthrough,
+                anode_cable,
+                anode_cable_insulator,
+                anode_cathod_insulator,
+                cathode_feedthrough,
+                cathode_cable,
+                cathode_vacuum_insulator,
+                cathode_cable_insulator,
+            ],
         )
 
-        # Make joint to base
-        RigidJoint(
-            label="base",
-            to_part=self,
-            joint_location=Location((0, 0, 0)),
-        )
-
-class AnodeBase(BasePartObject):
-    """
-    Base for the cathode
-    """
-
-    def __init__(
-        self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the base
-        base = Circle(outer_diameter/2)
-        if inner_diameter > 0:
-            base = base - Circle(inner_diameter/2)
-        base = extrude(base, amount=height)
-
-        # Make joint to electrode
-        super().__init__(
-            part=base, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to electrode
+        # Make electrode joint
         RigidJoint(
             label="electrode",
             to_part=self,
-            joint_location=Location((0, 0, height)),
+            joint_location=Location((0, 0, 0), (0, 180, 0)),
         )
 
-
-class CathodeBase(BasePartObject):
-    """
-    Base for the cathode
-    """
-
-    def __init__(
-        self,
-        plate_outer_diameter: float,
-        plate_inner_diameter: float,
-        plate_thickness: float,
-        base_outer_diameter: float,
-        base_inner_diameter: float,
-        base_height: float,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the electrode
-        plate = Circle(plate_outer_diameter/2)
-        plate = plate - Circle(plate_inner_diameter/2)
-        plate = extrude(plate, amount=plate_thickness)
-
-        # Create the base
-        base = Circle(base_outer_diameter/2)
-        base = base - Circle(base_inner_diameter/2)
-        base = extrude(base, amount=base_height)
-        base = Location((0, 0, -base_height)) * base
-
-        # Join the plate and base
-        cathode_base = plate + base
-
-        # Make joint to electrode
-        super().__init__(
-            part=cathode_base, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to electrode
+        # Make anode cable joint
         RigidJoint(
-            label="electrode",
+            label="anode_cable",
             to_part=self,
-            joint_location=Location((0, 0, plate_thickness)),
+            joint_location=Location((cathode_outer_diameter/2 - cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)),
         )
 
-
-
-class AnodeInsulator(BasePartObject):
-    """
-    Insulator sleeve for the anode
-    """
-
-    def __init__(
-        self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the base
-        base = Circle(outer_diameter/2)
-        base = base - Circle(inner_diameter/2)
-        base = extrude(base, amount=height)
-
-        # Make joint to electrode
-        super().__init__(
-            part=base, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to electrode
+        # Make cathode cable joint
         RigidJoint(
-            label="base",
+            label="cathode_cable",
             to_part=self,
-            joint_location=Location((0, 0, 0)),
+            joint_location=Location((-cathode_outer_diameter/2 + cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 180)),
         )
-
-
-class InnerBaseInsulator(BasePartObject):
-    """
-    Insulator sleeve between anode and cathode in the base
-    """
-
-    def __init__(
-        self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the base
-        base = Circle(outer_diameter/2)
-        base = base - Circle(inner_diameter/2)
-        base = extrude(base, amount=height)
-
-        # Make joint to electrode
-        super().__init__(
-            part=base, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to electrode
-        RigidJoint(
-            label="electrode",
-            to_part=self,
-            joint_location=Location((0, 0, height)),
-        )
-
-class OuterBaseInsulator(BasePartObject):
-    """
-    Insulator sleeve for outer cathode in the base
-    """
-
-    def __init__(
-        self,
-        outer_diameter: float,
-        inner_diameter: float,
-        height: float,
-        rotation: RotationLike = (0, 0, 0),
-        align: Union[None, Align, tuple[Align, Align, Align]] = None,
-        mode: Mode = Mode.ADD,
-    ):
-        context: BuildPart = BuildPart._get_context()
-
-        # Create the base
-        base = Circle(outer_diameter/2)
-        base = base - Circle(inner_diameter/2)
-        base = extrude(base, amount=height)
-
-        # Make joint to electrode
-        super().__init__(
-            part=base, rotation=rotation, align=tuplify(align, 3), mode=mode
-        )
-
-        # Make joint to electrode
-        RigidJoint(
-            label="electrode",
-            to_part=self,
-            joint_location=Location((0, 0, height)),
-        )
-
-
-
-
-if __name__ == "__main__":
-    from ocp_vscode import *
-
-    # Create electrode 
-    anode_electrode = CylindricElectrode(outer_diameter=10, height=15, inner_diameter=5, fillet_radius=1)
-    anode_electrode.label = "anode"
-    cathode_electrode = SpokedElectrode(outer_diameter=25, inner_diameter=18, height=30, nr_spokes=8, fillet_radius=0.5)
-    cathode_electrode.label = "cathode"
-    cathode_base = CathodeBase(plate_outer_diameter=25, plate_inner_diameter=18, plate_thickness=3, base_outer_diameter=20, base_inner_diameter=18, base_height=10)
-    cathode_base.label = "cathode_base"
-    anode_base = AnodeBase(outer_diameter=10, inner_diameter=0, height=13)
-    anode_base.label = "cathode_base"
-    anode_insulator = AnodeInsulator(outer_diameter=12, inner_diameter=10, height=3)
-    anode_insulator.label = "anode_insulator"
-    base_insulator = BaseInsulator(outer_diameter=18, inner_diameter=10, height=13)
- 
-    cathode_electrode.joints["base"].connect_to(cathode_base.joints["electrode"])
-    anode_electrode.joints["base"].connect_to(anode_base.joints["electrode"])
-    anode_electrode.joints["base"].connect_to(anode_insulator.joints["base"])
-    anode_electrode.joints["base"].connect_to(base_insulator.joints["electrode"])
-
-    # Show electrode 
-    if "show_object" in locals():
-        #show_object(electrode.wrapped, name="pipe")
-        #show_object(electrode_assembly.wrapped, name="electrodes")
-        #show_object(cathode_electrode, name="cathode", show_joints=True)
-        show(cathode_electrode, cathode_base, anode_electrode, anode_base, anode_insulator, base_insulator, render_joints=True)
-        #show_object(cathode_base.wrapped, name="cathode_base")

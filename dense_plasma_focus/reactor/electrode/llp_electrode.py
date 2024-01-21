@@ -22,6 +22,8 @@ class LLPElectrode(Compound):
         anode_outer_diameter: float,
         anode_inner_diameter: float,
         anode_fillet_radius: float,
+        insulator_thickness: float,
+        insulator_height: float,
         cathode_height: float,
         cathode_outer_diameter: float,
         cathode_inner_diameter: float,
@@ -33,19 +35,21 @@ class LLPElectrode(Compound):
     ):
 
         # Create anode
-        anode_electrode = CylindricalElectrode(outer_diameter=10, height=15, inner_diameter=5, fillet_radius=1)
+        anode_electrode = CylindricalElectrode(outer_diameter=anode_outer_diameter, height=anode_height, inner_diameter=anode_inner_diameter, fillet_radius=anode_fillet_radius)
         anode_electrode.label = "anode"
         anode_electrode.material = electrode_material
-        anode_insulator = AnodeInsulator(outer_diameter=12, inner_diameter=10, height=3)
+        anode_electrode.color = Color(electrode_material.color)
+        anode_insulator = AnodeInsulator(outer_diameter=anode_outer_diameter + insulator_thickness, inner_diameter=anode_outer_diameter, height=insulator_height)
         anode_insulator.label = "anode_insulator"
         anode_insulator.material = insulator_material
-        print(electrode_material.color)
+        anode_insulator.color = Color(insulator_material.color)
         anode_electrode.joints["feedthrough"].connect_to(anode_insulator.joints["feedthrough"])
 
         # Create cathode
-        cathode_electrode = SpokedElectrode(outer_diameter=25, inner_diameter=18, height=30, nr_spokes=8, fillet_radius=0.5)
+        cathode_electrode = SpokedElectrode(outer_diameter=cathode_outer_diameter, inner_diameter=cathode_inner_diameter, height=cathode_height, nr_spokes=cathode_nr_spokes, pitch=cathode_spoke_pitch, fillet_radius=cathode_fillet_radius)
         cathode_electrode.label = "cathode"
         cathode_electrode.material = electrode_material
+        cathode_electrode.color = Color(electrode_material.color)
         cathode_electrode.joints["feedthrough"].connect_to(anode_insulator.joints["feedthrough"])
 
         # Call super constructor
@@ -56,6 +60,13 @@ class LLPElectrode(Compound):
                 anode_insulator,
                 cathode_electrode,
             ],
+        )
+
+        # Make joints
+        RigidJoint(
+            label="feedthrough",
+            to_part=self,
+            joint_location=Location((0, 0, 0)),
         )
 
 if __name__ == "__main__":
