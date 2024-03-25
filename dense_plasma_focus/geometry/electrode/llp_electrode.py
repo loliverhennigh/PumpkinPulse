@@ -5,9 +5,9 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.reactor.electrode.cylindrical_electrode import CylindricalElectrode
-from dense_plasma_focus.reactor.electrode.spoked_electrode import SpokedElectrode
-from dense_plasma_focus.reactor.electrode.anode_insulator import AnodeInsulator
+from dense_plasma_focus.geometry.electrode.cylindrical_electrode import CylindricalElectrode
+from dense_plasma_focus.geometry.electrode.spoked_electrode import SpokedElectrode
+from dense_plasma_focus.geometry.electrode.anode_insulator import AnodeInsulator
 from dense_plasma_focus.material import Material, QUARTZ, COPPER
 
 

@@ -20,6 +20,7 @@ class Capacitor(Compound):
         cable_diameter: float = 2.5,
         cable_insulator_thickness: float = 0.5,
         capacitance: float = 1.0,
+        dielectric_material_name: str = "dielectric",
         electrode_material: Material = COPPER,
         insulator_material: Material = QUARTZ,
     ):
@@ -42,8 +43,18 @@ class Capacitor(Compound):
         dielectric = Location((0, 0, conductor_plate_thickness)) * Rectangle(capacitor_width, capacitor_width)
         dielectric = extrude(dielectric, amount=dielectric_thickness)
         dielectric.label = "dielectric"
-        dielectric.material = insulator_material
-        dielectric.color = Color(insulator_material.color)
+        surface_area = capacitor_width ** 2
+        eps = (capacitance * dielectric_thickness) / (surface_area)
+        dielectric_material = Material(
+            name=dielectric_material_name,
+            color="purple",
+            eps=eps,
+            mu=4 * 3.14159e-7,
+            sigma_e=0,
+            sigma_m=0,
+        )
+        dielectric.material = dielectric_material
+        dielectric.color = Color(dielectric_material.color)
 
         # Create conductor plate 1
         conductor_plate_1 = Location((0, 0, conductor_plate_thickness + dielectric_thickness)) * Rectangle(capacitor_width, capacitor_width)
@@ -60,7 +71,7 @@ class Capacitor(Compound):
         cable_conductor_1.color = Color(electrode_material.color)
 
         # Create insulator
-        insulator = Location((0, 0, -conductor_plate_thickness)) * Rectangle(capacitor_width + cable_insulator_thickness, capacitor_width + cable_insulator_thickness)
+        insulator = Location((0, 0, -conductor_plate_thickness)) * Rectangle(capacitor_width + 2.0 * cable_insulator_thickness, capacitor_width + 2.0 * cable_insulator_thickness)
         insulator = extrude(insulator, amount=4 * conductor_plate_thickness + dielectric_thickness)
         insulator = insulator - (conductor_plate_0 + cable_conductor_0 + dielectric + conductor_plate_1 + cable_conductor_1)
         insulator.label = "insulator"
@@ -87,9 +98,9 @@ class Capacitor(Compound):
             joint_location=Location((0, 0, 3 * conductor_plate_thickness + dielectric_thickness), (0, 180, 0)),
         )
 
-        ## Make anode cable joint
-        #RigidJoint(
-        #    label="back_connector",
-        #    to_part=self,
-        #    joint_location=Location((cathode_outer_diameter/2 - cable_diameter/2, 0, feedthrough_length + 4.0 * cable_diameter), (0, 0, 0)),
-        #)
+        # Make anode cable joint
+        RigidJoint(
+            label="back_connector",
+            to_part=self,
+            joint_location=Location((0, 0, -1*conductor_plate_thickness), (0, 0, 180)),
+        )

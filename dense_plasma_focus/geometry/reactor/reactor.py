@@ -6,13 +6,14 @@ import copy
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.reactor.electrode.cylindrical_electrode import CylindricalElectrode
-from dense_plasma_focus.reactor.electrode.llp_electrode import LLPElectrode
-from dense_plasma_focus.reactor.feedthrough.feedthrough import Feedthrough
-from dense_plasma_focus.reactor.capacitor.capacitor import Capacitor
-from dense_plasma_focus.reactor.resistor.resistor import Resistor
-from dense_plasma_focus.reactor.cable.cable import Cable
-from dense_plasma_focus.material import Material, QUARTZ, COPPER
+from dense_plasma_focus.geometry.electrode.cylindrical_electrode import CylindricalElectrode
+from dense_plasma_focus.geometry.electrode.llp_electrode import LLPElectrode
+from dense_plasma_focus.geometry.feedthrough.feedthrough import Feedthrough
+from dense_plasma_focus.geometry.capacitor.capacitor import Capacitor
+from dense_plasma_focus.geometry.resistor.resistor import Resistor
+from dense_plasma_focus.geometry.cable.cable import Cable
+from dense_plasma_focus.geometry.chamber.chamber import Chamber
+from dense_plasma_focus.material import Material, QUARTZ, COPPER, VACUUM
 
 
 class LLPReactor(Compound):
@@ -47,6 +48,10 @@ class LLPReactor(Compound):
         cable_insulator_thickness: float = 0.5,
         feedthrough_length: float = 10,
         resistor_length: float = 5,
+        resistance: float = 1.0,
+        chamber_diameter: float = 40,
+        chamber_height: float = 50,
+        chamber_thickness: float = 1.5,
     ):
 
         # Create electrode 
@@ -91,14 +96,14 @@ class LLPReactor(Compound):
             diameter=cable_diameter,
             insulator_thickness=cable_insulator_thickness,
             length=resistor_length,
-            resistance=1.0,
+            resistance=resistance,
             insulator_material=insulator_material,
         )
         cathode_resistor = Resistor(
             diameter=cable_diameter,
             insulator_thickness=cable_insulator_thickness,
             length=resistor_length,
-            resistance=1.0,
+            resistance=resistance,
             insulator_material=insulator_material,
         )
     
@@ -120,9 +125,30 @@ class LLPReactor(Compound):
             insulator_thickness=cable_insulator_thickness,
         )
         cathode_cable = copy.deepcopy(anode_cable)
+
+        # Make chamber
+        chamber = Chamber(
+            feedthrough_diameter=cathode_outer_diameter + 2.0 * insulator_thickness,
+            chamber_diameter=chamber_diameter,
+            chamber_height=chamber_height,
+            chamber_thickness=chamber_thickness,
+            material=electrode_material,
+        )
+
+        # Make vacuum area
+        vacuum_area = Circle(chamber_diameter/2)
+        vacuum_area = extrude(vacuum_area, amount=chamber_height)
+        vacuum_area = vacuum_area - [child for child in chamber.children]
+        vacuum_area = vacuum_area - [child for child in llp_electrode.children]
+        vacuum_area.label = "vacuum_area"
+        vacuum_area.color = Color(VACUUM.color)
+        vacuum_area.material = VACUUM
     
         # Connect feedthrough to electrode
         llp_electrode.joints["feedthrough"].connect_to(feedthrough.joints["electrode"])
+
+        # Connect chamber to electrode
+        llp_electrode.joints["feedthrough"].connect_to(chamber.joints["electrode"])
     
         # Connect resistors to feedthrough
         feedthrough.joints["anode_cable"].connect_to(anode_resistor.joints["front_connector"])
@@ -146,6 +172,8 @@ class LLPReactor(Compound):
                 cathode_resistor,
                 anode_cable,
                 cathode_cable,
+                chamber,
+                vacuum_area,
             ],
         )
 

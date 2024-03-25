@@ -7,10 +7,10 @@ from anytree.search import findall
 class Material:
     name: str
     color: str = "white"
-    eps: float = 8.854e-12
-    mu: float = 4.0 * 3.14159e-7
-    sigma_e: float = 0.0
-    sigma_m: float = 0.0
+    eps: float = 8.854e-12 # F/m
+    mu: float = 4.0 * 3.14159e-7 # H/m
+    sigma_e: float = 0.0 # S/m
+    sigma_m: float = 0.0 # S/m
 
     def __str__(self):
         return self.name

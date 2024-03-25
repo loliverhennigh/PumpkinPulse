@@ -5,7 +5,7 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.reactor.electrode.electrode import Electrode
+from dense_plasma_focus.geometry.electrode.electrode import Electrode
 
 class AnodeInsulator(Electrode):
     """
