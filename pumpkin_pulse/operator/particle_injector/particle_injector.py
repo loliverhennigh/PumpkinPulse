@@ -3,7 +3,7 @@ import numpy as np
 
 from pumpkin_pulse.operator.operator import Operator
 from pumpkin_pulse.operator.sort.sort import ParticleSorter
-from pumpkin_pulse.struct.particles import PosMom, Particles
+from pumpkin_pulse.struct.particles import Particles
 
 class ParticleInjector(Operator):
     _k = wp.constant(1.380649e-23) # Boltzmann constant
@@ -46,23 +46,23 @@ class ParticleInjector(Operator):
         i, j, k = wp.tid()
 
         # Set cell particle mapping buffer to store number of particles in cell
-        nr_particles_in_cell = ParticleInjector._get_nr_particles_in_cell(particles.cell_particle_mapping, wp.vec3i(i, j, k))
-        particles.cell_particle_mapping_buffer[i, j, k] = nr_particles_in_cell
+        nr_particles_in_cell = ParticleInjector._get_nr_particles_in_cell(particles.cell_particle_mapping.data, wp.vec3i(i, j, k))
+        particles.cell_particle_mapping_buffer.data[i, j, k] = nr_particles_in_cell
 
         # Compute maximum distance to check
         max_distance = wp.sqrt(
-            (particles.spacing[0] * wp.float32(particles.shape[0])) ** 2.0
-            + (particles.spacing[1] * wp.float32(particles.shape[1])) ** 2.0
-            + (particles.spacing[2] * wp.float32(particles.shape[2])) ** 2.0
+            (particles.cell_particle_mapping.spacing[0] * wp.float32(particles.cell_particle_mapping.shape[0])) ** 2.0
+            + (particles.cell_particle_mapping.spacing[1] * wp.float32(particles.cell_particle_mapping.shape[1])) ** 2.0
+            + (particles.cell_particle_mapping.spacing[2] * wp.float32(particles.cell_particle_mapping.shape[2])) ** 2.0
         )
 
-        # Get center of cell (rho center of cell)
+        # Get center of cell
         ijk = wp.vec3f(
-            wp.float32(i - particles.nr_ghost_cells),
-            wp.float32(j - particles.nr_ghost_cells),
-            wp.float32(k - particles.nr_ghost_cells),
+            wp.float32(i),
+            wp.float32(j),
+            wp.float32(k),
         )
-        pos = particles.rho_origin + wp.cw_mul(particles.spacing, ijk) + 0.5 * particles.spacing
+        pos = particles.cell_particle_mapping.origin + wp.cw_mul(particles.cell_particle_mapping.spacing, ijk) + 0.5 * particles.cell_particle_mapping.spacing
 
         # Check if cell is inside the mesh
         face_index = int(0)
@@ -73,11 +73,11 @@ class ParticleInjector(Operator):
            if (sign < 0):
 
                # Get lower and upper bounds of cell
-               lower_bound = particles.rho_origin + wp.cw_mul(particles.spacing, ijk)
-               upper_bound = particles.rho_origin + wp.cw_mul(particles.spacing, ijk + wp.vec3f(1.0, 1.0, 1.0))
+               lower_bound = particles.cell_particle_mapping.origin + wp.cw_mul(particles.cell_particle_mapping.spacing, ijk)
+               upper_bound = particles.cell_particle_mapping.origin + wp.cw_mul(particles.cell_particle_mapping.spacing, ijk + wp.vec3f(1.0, 1.0, 1.0))
 
                # Initialize random seed
-               r = wp.rand_init(seed, i * particles.shape[1] * particles.shape[2] + j * particles.shape[2] + k)
+               r = wp.rand_init(seed, i * particles.cell_particle_mapping.shape[1] * particles.cell_particle_mapping.shape[2] + j * particles.cell_particle_mapping.shape[2] + k)
 
                # Get index of last particles in particle list
                start_index = wp.atomic_add(particles.nr_particles, 0, nr_particles_per_cell)
@@ -94,23 +94,26 @@ class ParticleInjector(Operator):
                    # Get sigma for random velocity
                    sigma = wp.sqrt(ParticleInjector._k * temperature / mass)
 
-                   # Get random velocity
-                   vel = wp.vec3f(sigma * wp.randn(r), sigma * wp.randn(r), sigma * wp.randn(r))
+                   # Get random velocity TODO: fix normal inf issue
+                   #vel = wp.vec3f(sigma * wp.randn(r), sigma * wp.randn(r), sigma * wp.randn(r))
+                   vel = wp.vec3f(sigma * (wp.randf(r) - 0.5), sigma * (wp.randf(r) - 0.5), sigma * (wp.randf(r) - 0.5))
 
                    # Add mean velocity
                    vel += mean_velocity
 
                    # Set particle data
-                   pos_mom = PosMom(particle_pos, mass * vel)
-                   particles.data[start_index + p] = pos_mom
+                   particles.position[start_index + p] = particle_pos
+                   particles.momentum[start_index + p] = mass * vel
+                   particles.kill[start_index + p] = wp.uint8(0)
 
                    # Update cell particle mapping buffer
+                   ijk_float = wp.cw_div((particle_pos - particles.cell_particle_mapping.origin), particles.cell_particle_mapping.spacing)
                    particle_ijk = wp.vec3i(
-                       wp.int32((particle_pos[0] - particles.rho_origin[0]) / particles.spacing[0]) + particles.nr_ghost_cells,
-                       wp.int32((particle_pos[1] - particles.rho_origin[1]) / particles.spacing[1]) + particles.nr_ghost_cells,
-                       wp.int32((particle_pos[2] - particles.rho_origin[2]) / particles.spacing[2]) + particles.nr_ghost_cells,
+                      wp.int32(ijk_float[0]),
+                      wp.int32(ijk_float[1]),
+                      wp.int32(ijk_float[2]),
                    )
-                   wp.atomic_add(particles.cell_particle_mapping_buffer, particle_ijk[0], particle_ijk[1], particle_ijk[2], 1)
+                   wp.atomic_add(particles.cell_particle_mapping_buffer.data, particle_ijk[0], particle_ijk[1], particle_ijk[2], 1)
 
     def __call__(
         self,
@@ -141,8 +144,8 @@ class ParticleInjector(Operator):
 
         # Update cell particle mapping
         wp.utils.array_scan(
-            particles.cell_particle_mapping_buffer,
-            particles.cell_particle_mapping,
+            particles.cell_particle_mapping_buffer.data,
+            particles.cell_particle_mapping.data,
             inclusive=False,
         )
 

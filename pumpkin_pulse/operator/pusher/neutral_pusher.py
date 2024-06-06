@@ -1,69 +1,21 @@
 import warp as wp
 
-from pumpkin_pulse.struct.particles import Particles, PosMom
+from pumpkin_pulse.struct.field import Fieldfloat32
+from pumpkin_pulse.struct.particles import Particles
 from pumpkin_pulse.struct.material_properties import MaterialProperties
 from pumpkin_pulse.operator.pusher.pusher import Pusher
+from pumpkin_pulse.functional.indexing import pos_to_cell_index, pos_to_lower_cell_index
+from pumpkin_pulse.functional.marching_cube import VERTEX_TABLE, VERTEX_INDICES_TABLE
+from pumpkin_pulse.functional.ray_triangle_intersect import ray_triangle_intersect
 
-@wp.func
-def trilinear_interpolation(
-    material_properties: MaterialProperties,
-    pos: wp.vec3,
-):
-    # Get lower cell index
-    float_ijk = (wp.cw_div(pos - material_properties.origin, material_properties.spacing)
-        + wp.vec3(
-            wp.float32(material_properties.nr_ghost_cells), 
-            wp.float32(material_properties.nr_ghost_cells),
-            wp.float32(material_properties.nr_ghost_cells)
-        )
-    )
-    ijk = wp.vec3i(wp.int32(float_ijk[0]), wp.int32(float_ijk[1]), wp.int32(float_ijk[2]))
-
-    # Get id for all corners of cell
-    f_000 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0], ijk[1], ijk[2]])]
-    f_100 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0] + 1, ijk[1], ijk[2]])]
-    f_010 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0], ijk[1] + 1, ijk[2]])]
-    f_110 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0] + 1, ijk[1] + 1, ijk[2]])]
-    f_001 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0], ijk[1], ijk[2] + 1])]
-    f_101 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0] + 1, ijk[1], ijk[2] + 1])]
-    f_011 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0], ijk[1] + 1, ijk[2] + 1])]
-    f_111 = material_properties.solid_mapping[wp.int32(material_properties.id[ijk[0] + 1, ijk[1] + 1, ijk[2] + 1])]
-
-    # Get relative position in cell
-    relative_pos = float_ijk - wp.vec3(wp.float32(ijk[0]), wp.float32(ijk[1]), wp.float32(ijk[2]))
-
-    # x-direction
-    f_00 = f_000 * (1.0 - relative_pos[0]) + f_100 * relative_pos[0]
-    f_01 = f_001 * (1.0 - relative_pos[0]) + f_101 * relative_pos[0]
-    f_10 = f_010 * (1.0 - relative_pos[0]) + f_110 * relative_pos[0]
-    f_11 = f_011 * (1.0 - relative_pos[0]) + f_111 * relative_pos[0]
-
-    # y-direction
-    f_0 = f_00 * (1.0 - relative_pos[1]) + f_10 * relative_pos[1]
-    f_1 = f_01 * (1.0 - relative_pos[1]) + f_11 * relative_pos[1]
-
-    # z-direction
-    f = f_0 * (1.0 - relative_pos[2]) + f_1 * relative_pos[2]
-
-    return f
-
-@wp.func
-def pos_to_cell(
-    pos: wp.vec3f,
-    origin: wp.vec3f,
-    spacing: wp.vec3f,
-    nr_ghost_cells: wp.int32,
-):
-    return wp.vec3i(
-        wp.int32((pos[0] - origin[0]) / spacing[0]) + nr_ghost_cells,
-        wp.int32((pos[1] - origin[1]) / spacing[1]) + nr_ghost_cells,
-        wp.int32((pos[2] - origin[2]) / spacing[2]) + nr_ghost_cells,
-    )
 
 class NeutralPusher(Pusher):
     """
     Pushes particles that have no charge in time
     """
+
+    _mc_id_stencil_type = wp.vec(27, wp.uint8)
+    _mc_id_origin_stencil_type = wp.mat((27, 3), wp.float32)
 
     def __init__(
         self,
@@ -76,76 +28,164 @@ class NeutralPusher(Pusher):
         def push(
             particles: Particles,
             material_properties: MaterialProperties,
+            #temperature: Fieldfloat32,
             dt: wp.float32,
+            vertex_indices_table: wp.array2d(dtype=wp.int32),
+            vertex_table: wp.array2d(dtype=wp.float32),
         ):
 
             # Get particle index
             i = wp.tid()
 
-            # Get particle data
-            d = particles.data[i]
+            # Get particles momentum and position
+            mom = particles.momentum[i]
+            pos = particles.position[i]
 
-            # Get particle momentum
-            mom = d.momentum
-
-            # Compute new position (Bounce of any walls from material properties)
-            old_pos = d.position
-            new_pos = wp.vec3()
-
-            # Get solid fraction at old position
-            old_f = trilinear_interpolation(material_properties, old_pos)
-
-            # Check for reflections (Bounce of any walls from material properties)
-            for _ in range(10): # 10 as maximum number of reflections
-
-                # Compute new position
-                new_pos = old_pos + (dt * mom / particles.mass)
-
-                # Get solid fraction at new position
-                new_f = trilinear_interpolation(material_properties, new_pos)
-
-                # Check if particle is in solid
-                if new_f > 0.5:
-
-                    # Get wall kind
-                    wall_kind = material_properties.kind_mapping[wp.int32(material_properties.id[0, 0, 0])]
-
-                    # Find time of intersection
-                    dt = dt * (0.5 - old_f) / (new_f - old_f)
-
-                    # Get new position and use it as old position
-                    old_pos = old_pos + (dt * mom / particles.mass)
-
-                    # Reflect momentum
-                    mom = -mom
-
-                else:
-                    break
-
-
-            # Apply boundary conditions
-            new_pos = self.apply_boundary_conditions(
-                new_pos,
-                particles.origin,
-                particles.spacing,
-                particles.shape,
-                particles.nr_ghost_cells
+            # Get cell index
+            cell_index = pos_to_cell_index(
+                pos,
+                material_properties.mc_id.origin,
+                material_properties.mc_id.spacing,
+                material_properties.mc_id.nr_ghost_cells
             )
 
+            # Get stencil of marching cubes id
+            mc_id_stencil = NeutralPusher._mc_id_stencil_type()
+            for _i in range(27):
+
+                # Get index of cell
+                stencil_index_i = cell_index[0] + (_i % 3) - 1
+                stencil_index_j = cell_index[1] + ((_i // 3) % 3) - 1
+                stencil_index_k = cell_index[2] + (_i // 9) - 1
+
+                # Store marching cubes id
+                mc_id_stencil[_i] = material_properties.mc_id.data[stencil_index_i, stencil_index_j, stencil_index_k]
+
+            # Store remaining time to push particle
+            remaining_dt = dt
+
+            # Move particle until remaining time is zero
+            for _ in range(10): # Maximum number of pushes
+
+                # Get velocity
+                v = mom / particles.mass
+
+                # Set push time
+                push_dt = remaining_dt
+
+                # Push particle
+                new_pos = pos + push_dt * v
+
+                # Check if particle hits a boundary
+                hit = wp.bool(False)
+                normal = wp.vec3(0.0, 0.0, 0.0)
+
+                # Find intersection any triangles
+                # Loop over all neighbor cells (3x3x3)
+                for _i in range(27):
+
+                    # Check if any triangles in cell
+                    if vertex_indices_table[wp.int32(mc_id_stencil[_i]), 0] != -1:
+
+                        # Get index of cell
+                        stencil_index_i = cell_index[0] + (_i % 3) - 1
+                        stencil_index_j = cell_index[1] + ((_i // 3) % 3) - 1
+                        stencil_index_k = cell_index[2] + (_i // 9) - 1
+
+                        # Get origin of cell
+                        cell_origin = (
+                            material_properties.mc_id.origin
+                            + wp.cw_mul(
+                                material_properties.mc_id.spacing,
+                                (
+                                    wp.vec3(wp.float32(stencil_index_i), wp.float32(stencil_index_j), wp.float32(stencil_index_k))
+                                ),
+                            )
+                        )
+
+                        # For each cell check collisions with triangles (max 5 triangles)
+                        for _ti in range(5):
+
+                            # Get vertex index
+                            vertex_index_0 = vertex_indices_table[wp.int32(mc_id_stencil[_i]), _ti * 3 + 0]
+                            vertex_index_1 = vertex_indices_table[wp.int32(mc_id_stencil[_i]), _ti * 3 + 1]
+                            vertex_index_2 = vertex_indices_table[wp.int32(mc_id_stencil[_i]), _ti * 3 + 2]
+
+                            # Break if no triangle
+                            if vertex_index_0 == -1:
+                                break
+                            else:
+
+                                # Get triangle
+                                vertex_0 = wp.vec3(
+                                    vertex_table[vertex_index_0, 0] * material_properties.mc_id.spacing[0] + cell_origin[0],
+                                    vertex_table[vertex_index_0, 1] * material_properties.mc_id.spacing[1] + cell_origin[1],
+                                    vertex_table[vertex_index_0, 2] * material_properties.mc_id.spacing[2] + cell_origin[2],
+                                )
+                                vertex_1 = wp.vec3(
+                                    vertex_table[vertex_index_1, 0] * material_properties.mc_id.spacing[0] + cell_origin[0],
+                                    vertex_table[vertex_index_1, 1] * material_properties.mc_id.spacing[1] + cell_origin[1],
+                                    vertex_table[vertex_index_1, 2] * material_properties.mc_id.spacing[2] + cell_origin[2],
+                                )
+                                vertex_2 = wp.vec3(
+                                    vertex_table[vertex_index_2, 0] * material_properties.mc_id.spacing[0] + cell_origin[0],
+                                    vertex_table[vertex_index_2, 1] * material_properties.mc_id.spacing[1] + cell_origin[1],
+                                    vertex_table[vertex_index_2, 2] * material_properties.mc_id.spacing[2] + cell_origin[2],
+                                )
+
+                                # Ray triangle intersection
+                                intra_pos, t = ray_triangle_intersect(
+                                    pos,
+                                    new_pos,
+                                    vertex_0,
+                                    vertex_1,
+                                    vertex_2,
+                                )
+
+                                # Check if hit
+                                if t < 1.0:
+                                    push_dt = push_dt * (0.99 * t) # Slighly reduce push time
+                                    new_pos = pos + push_dt * v
+                                    hit = wp.bool(True)
+                                    normal = wp.normalize(wp.cross(vertex_1 - vertex_0, vertex_2 - vertex_0))
+
+                # Check if hit
+                if hit:
+
+                    # Reflect momentum
+                    mom = mom - 2.0 * wp.dot(mom, normal) * normal
+
+                # Update remaining time
+                remaining_dt -= push_dt
+
+                # Update particle position
+                pos = new_pos
+
+                # Check if remaining time is zero
+                if remaining_dt <= 0.0:
+                    break
+
+                # Check if maximum number of pushes is reached
+                if _ == 9:
+                    print("Particle pushed too many times")
+                    print(hit)
+                    print(remaining_dt)
+
             # Set new position
-            pos_mom = PosMom(new_pos, mom)
-            particles.data[i] = pos_mom
+            particles.position[i] = pos
+            particles.momentum[i] = mom
+            particles.kill[i] = wp.uint8(0) # Keep particle
 
             # Get index of new cell
-            ijk = pos_to_cell(
-                new_pos,
-                particles.rho_origin,
-                particles.spacing,
-                particles.nr_ghost_cells
+            ijk = pos_to_cell_index(
+                pos,
+                particles.cell_particle_mapping.origin,
+                particles.cell_particle_mapping.spacing,
+                particles.cell_particle_mapping.nr_ghost_cells
             )
 
             # Add particle count to particles per cell
-            wp.atomic_add(particles.cell_particle_mapping_buffer, ijk[0], ijk[1], ijk[2], 1)
+            wp.atomic_add(particles.cell_particle_mapping_buffer.data, ijk[0], ijk[1], ijk[2], 1)
 
         # Store push kernel
         self.push = push
@@ -154,11 +194,12 @@ class NeutralPusher(Pusher):
         self,
         particles: Particles,
         material_properties: MaterialProperties,
+        #temperature: Fieldfloat32,
         dt: float,
     ):
 
         # Zero cell particle mapping buffer
-        particles.cell_particle_mapping_buffer.zero_()
+        particles.cell_particle_mapping_buffer.data.zero_()
 
         # Compute number of particles to add each cel
         wp.launch(
@@ -166,15 +207,18 @@ class NeutralPusher(Pusher):
             inputs=[
                 particles,
                 material_properties,
+                #temperature,
                 dt,
+                VERTEX_INDICES_TABLE,
+                VERTEX_TABLE,
             ],
             dim=(particles.nr_particles.numpy()[0],),
         )
 
         # Update cell particle mapping
         wp.utils.array_scan(
-            particles.cell_particle_mapping_buffer,
-            particles.cell_particle_mapping,
+            particles.cell_particle_mapping_buffer.data,
+            particles.cell_particle_mapping.data,
             inclusive=False,
         )
 

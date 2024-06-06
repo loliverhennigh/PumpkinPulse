@@ -1,12 +1,12 @@
 import warp as wp
 
+from pumpkin_pulse.struct.field import Fielduint8, Fieldfloat32
+
 @wp.struct
 class MaterialProperties:
     # Id information
-    id: wp.array3d(dtype=wp.uint8)
-
-    # Temperature information
-    temperature: wp.array3d(dtype=wp.float32)
+    id: Fielduint8
+    mc_id: Fielduint8 # Marching cube id, this determins the triangles in the mesh
 
     # Material information mappings
     # Electrical properties
@@ -20,11 +20,5 @@ class MaterialProperties:
     thermal_conductivity_mapping: wp.array(dtype=wp.float32)
 
     # Particle properties
-    solid_mapping: wp.array(dtype=wp.float32)
-    kind_mapping: wp.array(dtype=wp.uint8)
-
-    # Grid information
-    origin: wp.vec3
-    spacing: wp.vec3
-    shape: wp.vec3i
-    nr_ghost_cells: wp.int32
+    solid_fraction_mapping: wp.array(dtype=wp.uint8) # 0: vacuum, 1: solid
+    solid_type_mapping: wp.array(dtype=wp.uint8) # 0: reflective, 1: absorptive, 2: stop, 3: thermalize

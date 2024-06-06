@@ -1,3 +1,4 @@
+from pumpkin_pulse.operator.allocator.field_allocator import FieldAllocator
 from pumpkin_pulse.operator.allocator.em_allocator import EMFieldAllocator
 from pumpkin_pulse.operator.allocator.particle_allocator import ParticleAllocator
 from pumpkin_pulse.operator.allocator.material_property_allocator import MaterialPropertyAllocator
