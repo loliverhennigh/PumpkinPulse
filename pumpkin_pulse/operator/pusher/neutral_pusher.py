@@ -64,6 +64,10 @@ class NeutralPusher(Pusher):
             # Store remaining time to push particle
             remaining_dt = dt
 
+            # Check if particle hits a boundary
+            hit = wp.bool(False)
+            nr_hits = wp.int32(0)
+
             # Move particle until remaining time is zero
             for _ in range(10): # Maximum number of pushes
 
@@ -76,12 +80,16 @@ class NeutralPusher(Pusher):
                 # Push particle
                 new_pos = pos + push_dt * v
 
-                # Check if particle hits a boundary
+                # Reset hit
                 hit = wp.bool(False)
-                normal = wp.vec3(0.0, 0.0, 0.0)
+
+                # Normalized distance to nearest triangle
+                running_d = wp.float32(1.0)
+                running_t = wp.float32(1.0)
 
                 # Find intersection any triangles
                 # Loop over all neighbor cells (3x3x3)
+
                 for _i in range(27):
 
                     # Check if any triangles in cell
@@ -134,26 +142,42 @@ class NeutralPusher(Pusher):
                                 )
 
                                 # Ray triangle intersection
-                                intra_pos, t = ray_triangle_intersect(
+                                intra_pos, t, d = ray_triangle_intersect(
                                     pos,
                                     new_pos,
                                     vertex_0,
                                     vertex_1,
                                     vertex_2,
+                                    material_properties.mc_id.spacing[0],
                                 )
 
                                 # Check if hit
-                                if t < 1.0:
-                                    push_dt = push_dt * (0.99 * t) # Slighly reduce push time
-                                    new_pos = pos + push_dt * v
+                                if d < running_d:
+
+                                    # Update running distance
+                                    running_d = d
+
+                                    # Update running time
+                                    running_t = t
+
+                                    # Update hit
                                     hit = wp.bool(True)
-                                    normal = wp.normalize(wp.cross(vertex_1 - vertex_0, vertex_2 - vertex_0))
+
+                                    # Update normal
+                                    normal = - wp.cross(vertex_1 - vertex_0, vertex_2 - vertex_0)
+                                    normal = normal / wp.length(normal)
 
                 # Check if hit
                 if hit:
 
                     # Reflect momentum
-                    mom = mom - 2.0 * wp.dot(mom, normal) * normal
+                    if wp.dot(mom, normal) < 0.0:
+                        mom = mom - 2.0 * wp.dot(mom, normal) * normal
+
+                    # Slightly reduce push time
+                    push_dt = 0.99 * running_t * push_dt
+                    new_pos = pos + push_dt * v
+                    nr_hits += 1
 
                 # Update remaining time
                 remaining_dt -= push_dt
@@ -167,14 +191,12 @@ class NeutralPusher(Pusher):
 
                 # Check if maximum number of pushes is reached
                 if _ == 9:
-                    print("Particle pushed too many times")
-                    print(hit)
-                    print(remaining_dt)
+                    #print("Particle pushed too many times")
+                    break
 
-            # Set new position
-            particles.position[i] = pos
-            particles.momentum[i] = mom
-            particles.kill[i] = wp.uint8(0) # Keep particle
+            #if nr_hits > 2:
+            #    print("Particle hit multiple times")
+            #    print(nr_hits)
 
             # Get index of new cell
             ijk = pos_to_cell_index(
@@ -184,8 +206,21 @@ class NeutralPusher(Pusher):
                 particles.cell_particle_mapping.nr_ghost_cells
             )
 
+            # Set new position
+            particles.position[i] = pos
+            particles.momentum[i] = mom
+
+            # Check if particle is outside domain
+            if ijk[0] < 1 or ijk[0] >= particles.cell_particle_mapping.shape[0]-1:
+                particles.kill[i] = wp.uint8(1)
+            if ijk[1] < 1 or ijk[1] >= particles.cell_particle_mapping.shape[1]-1:
+                particles.kill[i] = wp.uint8(1)
+            if ijk[2] < 1 or ijk[2] >= particles.cell_particle_mapping.shape[2]-1:
+                particles.kill[i] = wp.uint8(1)
+
             # Add particle count to particles per cell
-            wp.atomic_add(particles.cell_particle_mapping_buffer.data, ijk[0], ijk[1], ijk[2], 1)
+            if particles.kill[i] == 0:
+                wp.atomic_add(particles.cell_particle_mapping_buffer.data, ijk[0], ijk[1], ijk[2], 1)
 
         # Store push kernel
         self.push = push

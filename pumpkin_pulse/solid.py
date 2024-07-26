@@ -9,11 +9,13 @@ class Solid:
         self,
         geometry: Compound,
         material: Material,
+        label: str = "",
         initial_electric_field: Union[None, Tuple[float, int]] = None,
         permiable: bool = False, # If particles can pass through the solid
     ):
         self.geometry = geometry
         self.material = material
+        self.label = label
         self.initial_electric_field = initial_electric_field
         self.permiable = permiable
 

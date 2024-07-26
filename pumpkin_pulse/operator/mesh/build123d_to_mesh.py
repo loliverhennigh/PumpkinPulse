@@ -4,7 +4,6 @@ from stl import mesh as np_mesh
 import numpy as np
 import tempfile
 
-from pumpkin_pulse.struct.particles import Particles
 from pumpkin_pulse.operator.operator import Operator
 
 class Build123DToMesh(Operator):

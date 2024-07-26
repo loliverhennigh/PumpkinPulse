@@ -19,6 +19,7 @@ class ParticleSorter(Operator):
 
         # Skip if particle is dead
         if k == wp.uint8(1):
+            wp.atomic_add(particles.nr_particles, 0, -1)
             return
 
         # Determine cell index

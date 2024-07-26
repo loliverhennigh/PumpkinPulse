@@ -3,16 +3,18 @@ import warp as wp
 from pumpkin_pulse.struct.field import Fieldint32
 
 @wp.struct
+class Particle:
+    position: wp.vec3
+    momentum: wp.vec3
+    kill: wp.uint8 # 0 = alive, 1 = dead
+
+@wp.struct
 class Particles:
     # Primary particle data
-    position: wp.array(dtype=wp.vec3)
-    momentum: wp.array(dtype=wp.vec3)
-    kill: wp.array(dtype=wp.uint8)
+    data: wp.array(dtype=Particle)
 
     # Buffers for particle data
-    position_buffer: wp.array(dtype=wp.vec3)
-    momentum_buffer: wp.array(dtype=wp.vec3)
-    kill_buffer: wp.array(dtype=wp.uint8)
+    data_buffer: wp.array(dtype=Particle)
 
     # Particle information
     weighting: wp.float32

@@ -31,15 +31,13 @@ if __name__ == "__main__":
     stl_to_mesh = StlToMesh()
 
     # Parameters
-    nr_particles = 100000000
-    origin = (-5.0, -5.0, -5.0)
+    nr_particles = 130000000
+    origin = (-6.0, -3.0, -3.0)
     spacing = (0.05, 0.05, 0.05)
-    shape = (200, 200, 200)
+    shape = (240, 120, 120)
     nr_ghost_cells = 0
-    cylinder_radius = 0.2
-    cylinder_height = 1.5
-    cylinder_thickness = 0.3
-    temperature = 10000.0
+    temperature = 1000.0
+    velocity = 5000.0
 
     # Allocate particles
     particles = particle_allocator(
@@ -71,46 +69,33 @@ if __name__ == "__main__":
     )
 
     # Set solid sphere in material properties
-    sphere = Location((1.5, 0.0, 0.0)) * Sphere(1.5)
-    sphere_mesh = build123d_to_mesh(sphere)
+    stl_file = "files/X-71_super_space_shuttle.stl"
+    mesh = stl_to_mesh(stl_file)
     material_properties = mesh_material_property_setter(
         material_properties=material_properties,
-        mesh=sphere_mesh,
-        id_number=1,
-    )
-
-    # Set solid cylinder in material properties
-    outer_circle = Circle(cylinder_radius+cylinder_thickness)
-    inner_circle = Circle(cylinder_radius)
-    cylinder = extrude(outer_circle - inner_circle, cylinder_height)
-    cylinder = Rotation(0.0, 90.0, 0.0) * cylinder
-    cylinder = Location((-5.0, 0.0, 0.0)) * cylinder
-    cylinder_mesh = build123d_to_mesh(cylinder)
-    material_properties = mesh_material_property_setter(
-        material_properties=material_properties,
-        mesh=cylinder_mesh,
+        mesh=mesh,
         id_number=1,
     )
 
     # Save solid meshes
     marching_cube_saver(
         material_properties,
-        filename="test_basic_pusher_sphere.vtk",
+        filename="shuttle_solid.vtk",
     )
 
-    # Set circle of particles
-    inlet_circle = Circle(cylinder_radius-0.1)
-    inlet_circle = extrude(inlet_circle, 0.1)
-    inlet_circle = Rotation(0.0, 90.0, 0.0) * inlet_circle
-    inlet_circle = Location((-4.9, 0.0, 0.0)) * inlet_circle
-    inlet_circle_mesh = build123d_to_mesh(inlet_circle)
-    nr_particles_per_cell = 15000
+    # Set box
+    inlet_box = Rectangle(-5.9, -5.9)
+    inlet_box = extrude(inlet_box, 0.1)
+    inlet_box = Rotation(0.0, 90.0, 0.0) * inlet_box
+    inlet_box = Location((-5.9, 0.0, 0.0)) * inlet_box
+    inlet_box_mesh = build123d_to_mesh(inlet_box)
+    nr_particles_per_cell = 12
     particles = particle_injector(
         particles,
-        mesh=inlet_circle_mesh,
+        mesh=inlet_box_mesh,
         nr_particles_per_cell=nr_particles_per_cell,
         temperature=temperature,
-        mean_velocity=(0.0, 0.0, 0.0),
+        mean_velocity=(velocity, 0.0, 0.0),
     )
     
     particles = pusher(
@@ -135,14 +120,14 @@ if __name__ == "__main__":
             #)
             field_saver(
                 particles.cell_particle_mapping_buffer,
-                filename=f"test_basic_pusher_field_{str(i).zfill(5)}.vtk",
+                filename=f"shuttle_field_{str(i).zfill(5)}.vtk",
             )
         particles = particle_injector(
             particles,
-            mesh=inlet_circle_mesh,
+            mesh=inlet_box_mesh,
             nr_particles_per_cell=nr_particles_per_cell,
             temperature=temperature,
-            mean_velocity=(0.0, 0.0, 0.0),
+            mean_velocity=(velocity, 0.0, 0.0),
         )
         particles = pusher(
             particles,
