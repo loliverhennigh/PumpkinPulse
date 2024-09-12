@@ -6,3 +6,7 @@ from pumpkin_pulse.operator.mhd.ideal_mhd import (
     ConstrainedTransport,
     FaceMagneticFieldToCellMagneticField,
 )
+from pumpkin_pulse.operator.mhd.two_fluid_mhd import (
+    AddEMSourceTerms,
+    GetCurrentDensity,
+)

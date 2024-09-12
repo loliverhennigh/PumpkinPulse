@@ -21,10 +21,6 @@ from pumpkin_pulse.operator.saver import FieldSaver
 #########################
 
 class PlaneWaveInitialize(Operator):
-    _c = wp.constant(3.0e8)
-    _eps0 = wp.constant(8.854187817e-12)
-    _mu0 = wp.constant(4.0 * 3.14159 * 1.0e-7)
-    _eta0 = wp.constant(376.73031346177)
 
     @wp.kernel
     def _initialize_plane_wave(
@@ -54,7 +50,7 @@ class PlaneWaveInitialize(Operator):
         electric_field.data[1, i, j, k] = amplitude * envelope * wp.cos(phase)
 
         # Calculate the magnetic field
-        magnetic_field.data[2, i, j, k] = (amplitude / PlaneWaveInitialize._eta0) * envelope * wp.cos(phase)
+        magnetic_field.data[2, i, j, k] = (amplitude / 1.0) * envelope * wp.cos(phase)
 
 
     def __call__(
@@ -89,6 +85,7 @@ if __name__ == '__main__':
     origin = (-25.0, -25.0, -25.0)
     spacing = (dx, dx, dx)
     shape = (int(50.0/dx), int(50.0/dx), int(50.0/dx))
+    nr_cells = shape[0] * shape[1] * shape[2]
 
     # Electric parameters
     # Vacuum
@@ -182,11 +179,13 @@ if __name__ == '__main__':
     )
 
     # Run the simulation
+    import time
+    tic = time.time()
     for step in tqdm(range(num_steps)):
 
-        # Save the fields
-        if step % save_frequency == 0:
-            field_saver(electric_field, os.path.join(output_dir, f"electric_field_{str(step).zfill(4)}.vtk"))
+        ## Save the fields
+        #if step % save_frequency == 0:
+        #    field_saver(electric_field, os.path.join(output_dir, f"electric_field_{str(step).zfill(4)}.vtk"))
 
         # Update the magnetic field
         magnetic_field = h_field_update(
@@ -209,9 +208,15 @@ if __name__ == '__main__':
             dt
         )
 
+        # Compute MUPS
+        if step % 100 == 0:
+            wp.synchronize()
+            toc = time.time()
+            mups = nr_cells * step / (toc - tic) / 1.0e6
+            print(f"Iterations: {step}")
+            print(f"MUPS: {mups}")
 
-
-
+ 
 
 
 

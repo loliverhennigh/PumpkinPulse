@@ -14,10 +14,14 @@ from pumpkin_pulse.functional.stencil import (
     p4_float32_stencil_type,
     p4_uint8_stencil_type,
     p4_vec3f_stencil_type,
+    p2_float32_stencil_type,
+    p2_uint8_stencil_type,
+    p2_vec3f_stencil_type,
     faces_float32_type,
     get_p7_float32_stencil,
     get_p7_uint8_stencil,
     p4_stencil_to_faces,
+    p2_stencil_to_faces,
 )
 
 
@@ -289,21 +293,10 @@ class EulerUpdate(Operator):
 
         # Interpolated values
         rho_prime = rho - dt_half * (v_dot_rho_dxyz + rho * v_dxyz_trace)
-        if rho == 0.0:
-            vx_prime = 0.0
-            vy_prime = 0.0
-            vz_prime = 0.0
-        else:
-            vx_prime = vx - dt_half * (v_dx_dot_v + p_dxyz[0] / rho)
-            vy_prime = vy - dt_half * (v_dy_dot_v + p_dxyz[1] / rho)
-            vz_prime = vz - dt_half * (v_dz_dot_v + p_dxyz[2] / rho)
+        vx_prime = vx - dt_half * (v_dx_dot_v + p_dxyz[0] / rho)
+        vy_prime = vy - dt_half * (v_dy_dot_v + p_dxyz[1] / rho)
+        vz_prime = vz - dt_half * (v_dz_dot_v + p_dxyz[2] / rho)
         p_prime = p - dt_half * (gamma * p * v_dxyz_trace + v_dot_p_dxyz)
-
-        # Make sure velocity is not nan
-        if rho == 0.0:
-            vx_prime = 0.0
-            vy_prime = 0.0
-            vz_prime = 0.0
 
         return rho_prime, vx_prime, vy_prime, vz_prime, p_prime
 
@@ -389,7 +382,7 @@ class EulerUpdate(Operator):
         flux_face_x: wp.float32,
         flux_face_y: wp.float32,
         flux_face_z: wp.float32,
-        id_stencil: p4_uint8_stencil_type,
+        id_stencil: p2_uint8_stencil_type,
         spacing: wp.vec3f,
         dt: wp.float32,
         c: wp.int32,
@@ -535,23 +528,23 @@ class EulerUpdate(Operator):
             #if (id_0_0_0 != wp.uint8(0)) and (id_1_0_0 != wp.uint8(0)) and (id_0_1_0 != wp.uint8(0)) and (id_0_0_1 != wp.uint8(0)):
             #    return
 
-            # Make p4 stencil
-            rho_p4_stencil = p4_float32_stencil_type()
-            vx_p4_stencil = p4_float32_stencil_type()
-            vy_p4_stencil = p4_float32_stencil_type()
-            vz_p4_stencil = p4_float32_stencil_type()
-            p_p4_stencil = p4_float32_stencil_type()
-            id_p4_stencil = p4_uint8_stencil_type()
+            # Make p2 stencil
+            rho_p2_stencil = p2_float32_stencil_type()
+            vx_p2_stencil = p2_float32_stencil_type()
+            vy_p2_stencil = p2_float32_stencil_type()
+            vz_p2_stencil = p2_float32_stencil_type()
+            p_p2_stencil = p2_float32_stencil_type()
+            id_p2_stencil = p2_uint8_stencil_type()
 
-            # Make p4 stencil dxyz
-            rho_p4_stencil_dxyz = p4_vec3f_stencil_type()
-            vx_p4_stencil_dxyz = p4_vec3f_stencil_type()
-            vy_p4_stencil_dxyz = p4_vec3f_stencil_type()
-            vz_p4_stencil_dxyz = p4_vec3f_stencil_type()
-            p_p4_stencil_dxyz = p4_vec3f_stencil_type()
+            # Make p2 stencil dxyz
+            rho_p2_stencil_dxyz = p2_vec3f_stencil_type()
+            vx_p2_stencil_dxyz = p2_vec3f_stencil_type()
+            vy_p2_stencil_dxyz = p2_vec3f_stencil_type()
+            vz_p2_stencil_dxyz = p2_vec3f_stencil_type()
+            p_p2_stencil_dxyz = p2_vec3f_stencil_type()
 
-            # Fill p4 stencil
-            for c in range(4):
+            # Fill p2 stencil
+            for c in range(1):
                 # Get index offset
                 if c == 0:
                     i_offset, j_offset, k_offset = 0, 0, 0
@@ -583,20 +576,20 @@ class EulerUpdate(Operator):
                 )
 
                 # Apply boundary conditions
-                (
-                    rho_p7_stencil,
-                    vx_p7_stencil,
-                    vy_p7_stencil,
-                    vz_p7_stencil,
-                    p_p7_stencil,
-                ) = apply_boundary_conditions_p7(
-                    rho_p7_stencil,
-                    vx_p7_stencil,
-                    vy_p7_stencil,
-                    vz_p7_stencil,
-                    p_p7_stencil,
-                    id_p7_stencil,
-                )
+                #(
+                #    rho_p7_stencil,
+                #    vx_p7_stencil,
+                #    vy_p7_stencil,
+                #    vz_p7_stencil,
+                #    p_p7_stencil,
+                #) = apply_boundary_conditions_p7(
+                #    rho_p7_stencil,
+                #    vx_p7_stencil,
+                #    vy_p7_stencil,
+                #    vz_p7_stencil,
+                #    p_p7_stencil,
+                #    id_p7_stencil,
+                #)
 
                 # Get derivatives
                 rho_dxyz = p7_stencil_to_dxyz(rho_p7_stencil, density.spacing)
@@ -606,91 +599,91 @@ class EulerUpdate(Operator):
                 p_dxyz = p7_stencil_to_dxyz(p_p7_stencil, pressure.spacing)
 
                 # Set stencil
-                rho_p4_stencil[c] = rho_p7_stencil[0]
-                vx_p4_stencil[c] = vx_p7_stencil[0]
-                vy_p4_stencil[c] = vy_p7_stencil[0]
-                vz_p4_stencil[c] = vz_p7_stencil[0]
-                p_p4_stencil[c] = p_p7_stencil[0]
-                id_p4_stencil[c] = id_p7_stencil[0]
-                rho_p4_stencil_dxyz[c, 0] = rho_dxyz[0]
-                rho_p4_stencil_dxyz[c, 1] = rho_dxyz[1]
-                rho_p4_stencil_dxyz[c, 2] = rho_dxyz[2]
-                vx_p4_stencil_dxyz[c, 0] = vx_dxyz[0]
-                vx_p4_stencil_dxyz[c, 1] = vx_dxyz[1]
-                vx_p4_stencil_dxyz[c, 2] = vx_dxyz[2]
-                vy_p4_stencil_dxyz[c, 0] = vy_dxyz[0]
-                vy_p4_stencil_dxyz[c, 1] = vy_dxyz[1]
-                vy_p4_stencil_dxyz[c, 2] = vy_dxyz[2]
-                vz_p4_stencil_dxyz[c, 0] = vz_dxyz[0]
-                vz_p4_stencil_dxyz[c, 1] = vz_dxyz[1]
-                vz_p4_stencil_dxyz[c, 2] = vz_dxyz[2]
-                p_p4_stencil_dxyz[c, 0] = p_dxyz[0]
-                p_p4_stencil_dxyz[c, 1] = p_dxyz[1]
-                p_p4_stencil_dxyz[c, 2] = p_dxyz[2]
+                rho_p2_stencil[c] = rho_p7_stencil[0]
+                vx_p2_stencil[c] = vx_p7_stencil[0]
+                vy_p2_stencil[c] = vy_p7_stencil[0]
+                vz_p2_stencil[c] = vz_p7_stencil[0]
+                p_p2_stencil[c] = p_p7_stencil[0]
+                id_p2_stencil[c] = id_p7_stencil[0]
+                rho_p2_stencil_dxyz[c, 0] = rho_dxyz[0]
+                rho_p2_stencil_dxyz[c, 1] = rho_dxyz[1]
+                rho_p2_stencil_dxyz[c, 2] = rho_dxyz[2]
+                vx_p2_stencil_dxyz[c, 0] = vx_dxyz[0]
+                vx_p2_stencil_dxyz[c, 1] = vx_dxyz[1]
+                vx_p2_stencil_dxyz[c, 2] = vx_dxyz[2]
+                vy_p2_stencil_dxyz[c, 0] = vy_dxyz[0]
+                vy_p2_stencil_dxyz[c, 1] = vy_dxyz[1]
+                vy_p2_stencil_dxyz[c, 2] = vy_dxyz[2]
+                vz_p2_stencil_dxyz[c, 0] = vz_dxyz[0]
+                vz_p2_stencil_dxyz[c, 1] = vz_dxyz[1]
+                vz_p2_stencil_dxyz[c, 2] = vz_dxyz[2]
+                p_p2_stencil_dxyz[c, 0] = p_dxyz[0]
+                p_p2_stencil_dxyz[c, 1] = p_dxyz[1]
+                p_p2_stencil_dxyz[c, 2] = p_dxyz[2]
 
             # Loop over stencil to update variables
-            for c in range(4):
+            for c in range(1):
 
                 # Extrapolate half time step
                 rho, vx, vy, vz, p = EulerUpdate._extrapolate_half_time_step(
-                    rho_p4_stencil[c],
-                    rho_p4_stencil_dxyz[c],
-                    vx_p4_stencil[c],
-                    vx_p4_stencil_dxyz[c],
-                    vy_p4_stencil[c],
-                    vy_p4_stencil_dxyz[c],
-                    vz_p4_stencil[c],
-                    vz_p4_stencil_dxyz[c],
-                    p_p4_stencil[c],
-                    p_p4_stencil_dxyz[c],
+                    rho_p2_stencil[c],
+                    rho_p2_stencil_dxyz[c],
+                    vx_p2_stencil[c],
+                    vx_p2_stencil_dxyz[c],
+                    vy_p2_stencil[c],
+                    vy_p2_stencil_dxyz[c],
+                    vz_p2_stencil[c],
+                    vz_p2_stencil_dxyz[c],
+                    p_p2_stencil[c],
+                    p_p2_stencil_dxyz[c],
                     gamma,
                     dt,
                 )
 
                 # Set variables
-                rho_p4_stencil[c] = rho
-                vx_p4_stencil[c] = vx
-                vy_p4_stencil[c] = vy
-                vz_p4_stencil[c] = vz
-                p_p4_stencil[c] = p
+                rho_p2_stencil[c] = rho
+                vx_p2_stencil[c] = vx
+                vy_p2_stencil[c] = vy
+                vz_p2_stencil[c] = vz
+                p_p2_stencil[c] = p
 
             # Compute faces
-            rho_faces = p4_stencil_to_faces(
-                rho_p4_stencil, rho_p4_stencil_dxyz, density.spacing
+            rho_faces = p2_stencil_to_faces(
+                rho_p2_stencil, rho_p2_stencil_dxyz, density.spacing
             )
-            vx_faces = p4_stencil_to_faces(
-                vx_p4_stencil, vx_p4_stencil_dxyz, velocity.spacing
+            vx_faces = p2_stencil_to_faces(
+                vx_p2_stencil, vx_p2_stencil_dxyz, velocity.spacing
             )
-            vy_faces = p4_stencil_to_faces(
-                vy_p4_stencil, vy_p4_stencil_dxyz, velocity.spacing
+            vy_faces = p2_stencil_to_faces(
+                vy_p2_stencil, vy_p2_stencil_dxyz, velocity.spacing
             )
-            vz_faces = p4_stencil_to_faces(
-                vz_p4_stencil, vz_p4_stencil_dxyz, velocity.spacing
+            vz_faces = p2_stencil_to_faces(
+                vz_p2_stencil, vz_p2_stencil_dxyz, velocity.spacing
             )
-            p_faces = p4_stencil_to_faces(
-                p_p4_stencil, p_p4_stencil_dxyz, pressure.spacing
+            p_faces = p2_stencil_to_faces(
+                p_p2_stencil, p_p2_stencil_dxyz, pressure.spacing
             )
 
-            # Apply boundary conditions
-            (
-                rho_faces,
-                vx_faces,
-                vy_faces,
-                vz_faces,
-                p_faces,
-            ) = apply_boundary_conditions_faces(
-                rho_faces,
-                vx_faces,
-                vy_faces,
-                vz_faces,
-                p_faces,
-                rho_p4_stencil,
-                vx_p4_stencil,
-                vy_p4_stencil,
-                vz_p4_stencil,
-                p_p4_stencil,
-                id_p4_stencil
-            )
+            ## Apply boundary conditions
+            #(
+            #    rho_faces,
+            #    vx_faces,
+            #    vy_faces,
+            #    vz_faces,
+            #    p_faces,
+            #) = apply_boundary_conditions_faces(
+            #    rho_faces,
+            #    vx_faces,
+            #    vy_faces,
+            #    vz_faces,
+            #    p_faces,
+            #    rho_p2_stencil,
+            #    vx_p2_stencil,
+            #    vy_p2_stencil,
+            #    vz_p2_stencil,
+            #    p_p2_stencil,
+            #    id_p2_stencil
+            #)
 
             # Compute fluxes
             (
@@ -712,52 +705,52 @@ class EulerUpdate(Operator):
                 p_faces[0],
                 gamma,
             )
-            (
-                flux_mass_face_y,
-                flux_mom_y_face_y,
-                flux_mom_x_face_y,
-                flux_mom_z_face_y,
-                flux_energy_face_y,
-            ) = EulerUpdate._compute_fluxes(
-                rho_faces[3],
-                rho_faces[2],
-                vy_faces[3],
-                vy_faces[2],
-                vx_faces[3],
-                vx_faces[2],
-                vz_faces[3],
-                vz_faces[2],
-                p_faces[3],
-                p_faces[2],
-                gamma,
-            )
-            (
-                flux_mass_face_z,
-                flux_mom_z_face_z,
-                flux_mom_x_face_z,
-                flux_mom_y_face_z,
-                flux_energy_face_z,
-            ) = EulerUpdate._compute_fluxes(
-                rho_faces[5],
-                rho_faces[4],
-                vz_faces[5],
-                vz_faces[4],
-                vx_faces[5],
-                vx_faces[4],
-                vy_faces[5],
-                vy_faces[4],
-                p_faces[5],
-                p_faces[4],
-                gamma,
-            )
+            #(
+            #    flux_mass_face_y,
+            #    flux_mom_y_face_y,
+            #    flux_mom_x_face_y,
+            #    flux_mom_z_face_y,
+            #    flux_energy_face_y,
+            #) = EulerUpdate._compute_fluxes(
+            #    rho_faces[3],
+            #    rho_faces[2],
+            #    vy_faces[3],
+            #    vy_faces[2],
+            #    vx_faces[3],
+            #    vx_faces[2],
+            #    vz_faces[3],
+            #    vz_faces[2],
+            #    p_faces[3],
+            #    p_faces[2],
+            #    gamma,
+            #)
+            #(
+            #    flux_mass_face_z,
+            #    flux_mom_z_face_z,
+            #    flux_mom_x_face_z,
+            #    flux_mom_y_face_z,
+            #    flux_energy_face_z,
+            #) = EulerUpdate._compute_fluxes(
+            #    rho_faces[5],
+            #    rho_faces[4],
+            #    vz_faces[5],
+            #    vz_faces[4],
+            #    vx_faces[5],
+            #    vx_faces[4],
+            #    vy_faces[5],
+            #    vy_faces[4],
+            #    p_faces[5],
+            #    p_faces[4],
+            #    gamma,
+            #)
 
             # Apply fluxes
             EulerUpdate._apply_fluxes(
                 mass,
                 flux_mass_face_x,
-                flux_mass_face_y,
-                flux_mass_face_z,
-                id_p4_stencil,
+                0.0,
+                0.0,
+                id_p2_stencil,
                 density.spacing,
                 dt,
                 0,
@@ -768,9 +761,9 @@ class EulerUpdate(Operator):
             EulerUpdate._apply_fluxes(
                 momentum,
                 flux_mom_x_face_x,
-                flux_mom_x_face_y,
-                flux_mom_x_face_z,
-                id_p4_stencil,
+                0.0,
+                0.0,
+                id_p2_stencil,
                 velocity.spacing,
                 dt,
                 0,
@@ -781,9 +774,9 @@ class EulerUpdate(Operator):
             EulerUpdate._apply_fluxes(
                 momentum,
                 flux_mom_y_face_x,
-                flux_mom_y_face_y,
-                flux_mom_y_face_z,
-                id_p4_stencil,
+                0.0,
+                0.0,
+                id_p2_stencil,
                 velocity.spacing,
                 dt,
                 1,
@@ -794,9 +787,9 @@ class EulerUpdate(Operator):
             EulerUpdate._apply_fluxes(
                 momentum,
                 flux_mom_z_face_x,
-                flux_mom_z_face_y,
-                flux_mom_z_face_z,
-                id_p4_stencil,
+                0.0,
+                0.0,
+                id_p2_stencil,
                 velocity.spacing,
                 dt,
                 2,
@@ -807,9 +800,9 @@ class EulerUpdate(Operator):
             EulerUpdate._apply_fluxes(
                 energy,
                 flux_energy_face_x,
-                flux_energy_face_y,
-                flux_energy_face_z,
-                id_p4_stencil,
+                0.0,
+                0.0,
+                id_p2_stencil,
                 density.spacing,
                 dt,
                 0,

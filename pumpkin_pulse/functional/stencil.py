@@ -23,6 +23,11 @@ p4_float32_stencil_type = wp.vec(4, wp.float32)
 p4_uint8_stencil_type = wp.vec(4, wp.uint8)
 p4_vec3f_stencil_type = wp.mat((4, 3), wp.float32)
 
+# 2 point stencil
+p2_float32_stencil_type = wp.vec(2, wp.float32)
+p2_uint8_stencil_type = wp.vec(2, wp.uint8)
+p2_vec3f_stencil_type = wp.mat((2, 3), wp.float32)
+
 # lower faces
 # 0: right (-1, 0, 0)
 # 1: left  (-1, 0, 0)
@@ -31,6 +36,7 @@ p4_vec3f_stencil_type = wp.mat((4, 3), wp.float32)
 # 4: right ( 0, 0,-1)
 # 5: left  ( 0, 0,-1)
 faces_float32_type = wp.vec(6, wp.float32)
+faces_2_float32_type = wp.vec(2, wp.float32)
 
 @wp.func
 def get_p7_float32_stencil(
@@ -162,4 +168,16 @@ def p4_stencil_to_faces(
     faces[3] = v_stencil[2] - 0.5 * spacing[1] * v_stencil_dxyz[2, 1]
     faces[4] = v_stencil[0] + 0.5 * spacing[2] * v_stencil_dxyz[0, 2]
     faces[5] = v_stencil[3] - 0.5 * spacing[2] * v_stencil_dxyz[3, 2]
+    return faces
+
+
+@wp.func
+def p2_stencil_to_faces(
+    v_stencil: p2_float32_stencil_type,
+    v_stencil_dxyz: p2_vec3f_stencil_type,
+    spacing: wp.vec3f,
+):
+    faces = faces_2_float32_type()
+    faces[0] = v_stencil[0] + 0.5 * spacing[0] * v_stencil_dxyz[0, 0]
+    faces[1] = v_stencil[1] - 0.5 * spacing[0] * v_stencil_dxyz[1, 0]
     return faces
