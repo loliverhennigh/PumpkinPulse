@@ -13,13 +13,30 @@ def _python_mod(a: wp.int32, b: wp.int32):
 
 @wp.func
 def periodic_indexing(
-    data: wp.array4d(dtype=Any),
+    data: wp.array4d(dtype=wp.float32),
     shape: wp.vec3i,
     c: wp.int32,
     i: wp.int32,
     j: wp.int32,
     k: wp.int32,
-):
+) -> wp.float32:
+    """
+    Periodic indexing for 3D data.
+    """
+    i = _python_mod(i, shape[0])
+    j = _python_mod(j, shape[1])
+    k = _python_mod(k, shape[2])
+    return data[c, i, j, k]
+
+@wp.func
+def periodic_indexing_uint8(
+    data: wp.array4d(dtype=wp.uint8),
+    shape: wp.vec3i,
+    c: wp.int32,
+    i: wp.int32,
+    j: wp.int32,
+    k: wp.int32,
+) -> wp.uint8:
     """
     Periodic indexing for 3D data.
     """

@@ -6,16 +6,19 @@ import warp as wp
 from tqdm import tqdm
 import time
 
+wp.config.max_unroll = 16
+
 wp.init()
 
 from pumpkin_pulse.constructor import Constructor
 from pumpkin_pulse.data import Fieldfloat32, Fielduint8
 from pumpkin_pulse.operator import Operator
-from pumpkin_pulse.operator.hydro.euler_face import (
+from pumpkin_pulse.operator.hydro.euler_eos import (
     PrimitiveToConservative,
     ConservativeToPrimitive,
     GetTimeStep,
-    EulerUpdate,
+    #EulerUpdate,
+    TwoKernelEulerUpdate,
 )
 from pumpkin_pulse.operator.mhd import (
     AddEMSourceTerms,
@@ -540,15 +543,14 @@ def apply_boundary_conditions_faces(
 if __name__ == '__main__':
 
     # Geometry parameters
-    dx = 0.0005 # m
-    l = 0.040
+    dx = 0.00005 # m
+    l = 0.0128
     origin = (-l / 2.0, -l / 2.0, -l / 2.0)
     spacing = (dx, dx, dx)
     shape = (int(l / dx), int(l / dx), int(l / dx))
     nr_cells = shape[0] * shape[1] * shape[2]
     print(f"Shape: {shape}")
     print(f"Number of cells: {nr_cells}")
-    #exit()
 
     # Electromagnetic Constants
     elementary_charge = 1.60217662e-19
@@ -603,10 +605,7 @@ if __name__ == '__main__':
     primitive_to_conservative = PrimitiveToConservative()
     conservative_to_primitive = ConservativeToPrimitive()
     get_time_step = GetTimeStep()
-    euler_update = EulerUpdate(
-        #apply_boundary_conditions_p7=apply_boundary_conditions_p7,
-        #apply_boundary_conditions_faces=apply_boundary_conditions_faces,
-    )
+    two_kernel_euler_update = TwoKernelEulerUpdate()
     add_em_source_terms = AddEMSourceTerms()
     get_current_density = GetCurrentDensity()
     yee_electric_field_update = YeeElectricFieldUpdate()
@@ -615,195 +614,29 @@ if __name__ == '__main__':
     field_saver = FieldSaver()
 
     # Make the fields
-    density_i = constructor.create_field(
+    conservative_i = constructor.create_field(
         dtype=wp.float32,
-        cardinality=1,
+        cardinality=5,
         shape=shape,
         origin=origin,
-        spacing=spacing
+        spacing=spacing,
+        ordering=0,
     )
-    velocity_i = constructor.create_field(
+    primitive_i = constructor.create_field(
         dtype=wp.float32,
-        cardinality=3,
+        cardinality=5,
         shape=shape,
         origin=origin,
-        spacing=spacing
+        spacing=spacing,
+        ordering=0,
     )
-    pressure_i = constructor.create_field(
+    primitive_faces_i = constructor.create_field(
         dtype=wp.float32,
-        cardinality=1,
+        cardinality=5 * 3,
         shape=shape,
         origin=origin,
-        spacing=spacing
-    )
-    density_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    velocity_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    pressure_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    mass_i = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    momentum_i = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    energy_i = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    mass_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    momentum_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    energy_e = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    electric_field = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    magnetic_field = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    current_density = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=3,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    id_field = constructor.create_field(
-        dtype=wp.uint8,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    charge_density = constructor.create_field(
-        dtype=wp.float32,
-        cardinality=1,
-        shape=shape,
-        origin=origin,
-        spacing=spacing
-    )
-    eps_mapping = wp.from_numpy(np.array([epsilon_0, epsilon_0, 10.0 * epsilon_0, epsilon_0], dtype=np.float32), dtype=wp.float32)
-    mu_mapping = wp.from_numpy(np.array([mu_0, mu_0, mu_0, mu_0], dtype=np.float32), dtype=wp.float32)
-    sigma_e_mapping = wp.from_numpy(np.array([0.0, 0.0, 0.0, 100.0], dtype=np.float32), dtype=wp.float32)
-    sigma_m_mapping = wp.from_numpy(np.array([0.0, 0.0, 0.0, 100.0], dtype=np.float32), dtype=wp.float32)
-
-    # Initialize the fields
-    (
-        density_i,
-        velocity_i,
-        pressure_i,
-        density_e,
-        velocity_e,
-        pressure_e,
-        electric_field,
-        magnetic_field,
-    ) = initialize_blast(
-        density_i,
-        velocity_i,
-        pressure_i,
-        density_e,
-        velocity_e,
-        pressure_e,
-        electric_field,
-        magnetic_field,
-        id_field,
-        proton_mass,
-        electron_mass,
-        cylinder_number_density,
-        background_number_density,
-        cylinder_pressure,
-        background_pressure,
-        cylinder_radius,
-        insulator_radius,
-        insulator_thickness,
-    )
-
-    # Get conservative variables
-    mass_i, momentum_i, energy_i = primitive_to_conservative(
-        density_i,
-        velocity_i,
-        pressure_i,
-        mass_i,
-        momentum_i,
-        energy_i,
-        gamma
-    )
-    mass_e, momentum_e, energy_e = primitive_to_conservative(
-        density_e,
-        velocity_e,
-        pressure_e,
-        mass_e,
-        momentum_e,
-        energy_e,
-        gamma
-    )
-
-    # Save the fields
-    field_saver(
-        {
-            "density_i": density_i,
-            #"velocity_i": velocity_i,
-            "pressure_i": pressure_i,
-            "density_e": density_e,
-            #"velocity_e": velocity_e,
-            "pressure_e": pressure_e,
-            "electric_field": electric_field,
-            "magnetic_field": magnetic_field,
-            "current_density": current_density,
-        },
-        os.path.join(output_dir, "initial_conditions.vtk")
+        spacing=spacing,
+        ordering=0,
     )
 
     # Run the simulation
@@ -888,16 +721,11 @@ if __name__ == '__main__':
             #    -elementary_charge,
             #)
  
-
             # Update Conserved Variables
-            mass_i, momentum_i, energy_i = euler_update(
-                density_i,
-                velocity_i,
-                pressure_i,
-                mass_i,
-                momentum_i,
-                energy_i,
-                id_field,
+            conservative_i = two_kernel_euler_update(
+                primitive_i,
+                primitive_faces_i,
+                conservative_i,
                 gamma,
                 dt,
             )

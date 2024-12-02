@@ -5,7 +5,7 @@ import warp as wp
 
 from pumpkin_pulse.data.field import Fieldfloat32, Fielduint8
 from pumpkin_pulse.operator.operator import Operator
-from pumpkin_pulse.functional.indexing import periodic_indexing
+from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexing_uint8
 
 
 class YeeElectricFieldUpdate(Operator):
@@ -54,46 +54,9 @@ class YeeElectricFieldUpdate(Operator):
 
         return wp.vec3(eps_x, eps_y, eps_z), wp.vec3(sigma_e_x, sigma_e_y, sigma_e_z)
 
-    @wp.func
-    def _do_nothing_boundary_conditions(
-        id_0_0_1: wp.uint8,
-        id_0_1_0: wp.uint8,
-        id_0_1_1: wp.uint8,
-        id_1_0_0: wp.uint8,
-        id_1_0_1: wp.uint8,
-        id_1_1_0: wp.uint8,
-        id_1_1_1: wp.uint8,
-        m_x_1_1_1: wp.float32,
-        m_x_1_0_1: wp.float32,
-        m_x_1_1_0: wp.float32,
-        m_y_1_1_1: wp.float32,
-        m_y_0_1_1: wp.float32,
-        m_y_1_1_0: wp.float32,
-        m_z_1_1_1: wp.float32,
-        m_z_0_1_1: wp.float32,
-        m_z_1_0_1: wp.float32,
-    ):
-        return (
-            m_x_1_1_1,
-            m_x_1_0_1,
-            m_x_1_1_0,
-            m_y_1_1_1,
-            m_y_0_1_1,
-            m_y_1_1_0,
-            m_z_1_1_1,
-            m_z_0_1_1,
-            m_z_1_0_1,
-        )
-
-
     def __init__(
         self,
-        apply_boundary_conditions: callable = None,
     ):
-
-        # Set boundary conditions functions
-        if apply_boundary_conditions is None:
-            apply_boundary_conditions = self._do_nothing_boundary_conditions
 
         # Make kernels
         @wp.kernel
@@ -110,13 +73,13 @@ class YeeElectricFieldUpdate(Operator):
             i, j, k = wp.tid()
 
             # Get material id
-            id_0_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j - 1, k)
-            id_0_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j, k - 1)
-            id_0_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j, k)
-            id_1_0_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j - 1, k - 1)
-            id_1_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j - 1, k)
-            id_1_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k - 1)
-            id_1_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k)
+            id_0_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j - 1, k)
+            id_0_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j, k - 1)
+            id_0_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j, k)
+            id_1_0_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j - 1, k - 1)
+            id_1_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j - 1, k)
+            id_1_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k - 1)
+            id_1_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k)
 
             # Get magnetic field stencil
             m_x_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j, k)
@@ -128,36 +91,6 @@ class YeeElectricFieldUpdate(Operator):
             m_z_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j, k)
             m_z_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i - 1, j, k)
             m_z_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j - 1, k)
-
-            ## Apply boundary conditions
-            #(
-            #    m_x_1_1_1,
-            #    m_x_1_0_1,
-            #    m_x_1_1_0,
-            #    m_y_1_1_1,
-            #    m_y_0_1_1,
-            #    m_y_1_1_0,
-            #    m_z_1_1_1,
-            #    m_z_0_1_1,
-            #    m_z_1_0_1,
-            #) = apply_boundary_conditions(
-            #    id_0_0_1,
-            #    id_0_1_0,
-            #    id_0_1_1,
-            #    id_1_0_0,
-            #    id_1_0_1,
-            #    id_1_1_0,
-            #    id_1_1_1,
-            #    m_x_1_1_1,
-            #    m_x_1_0_1,
-            #    m_x_1_1_0,
-            #    m_y_1_1_1,
-            #    m_y_0_1_1,
-            #    m_y_1_1_0,
-            #    m_z_1_1_1,
-            #    m_z_0_1_1,
-            #    m_z_1_0_1,
-            #)
 
             # get properties
             eps, sigma_e = YeeElectricFieldUpdate._get_eps_and_sigma_e(
@@ -210,13 +143,13 @@ class YeeElectricFieldUpdate(Operator):
             i, j, k = wp.tid()
 
             # Get material id
-            id_0_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j - 1, k)
-            id_0_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j, k - 1)
-            id_0_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j, k)
-            id_1_0_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j - 1, k - 1)
-            id_1_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j - 1, k)
-            id_1_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k - 1)
-            id_1_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k)
+            id_0_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j - 1, k)
+            id_0_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j, k - 1)
+            id_0_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j, k)
+            id_1_0_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j - 1, k - 1)
+            id_1_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j - 1, k)
+            id_1_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k - 1)
+            id_1_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k)
 
             # Get magnetic field stencil
             m_x_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j, k)
@@ -229,35 +162,16 @@ class YeeElectricFieldUpdate(Operator):
             m_z_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i - 1, j, k)
             m_z_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j - 1, k)
 
-            ## Apply boundary conditions
-            #(
-            #    m_x_1_1_1,
-            #    m_x_1_0_1,
-            #    m_x_1_1_0,
-            #    m_y_1_1_1,
-            #    m_y_0_1_1,
-            #    m_y_1_1_0,
-            #    m_z_1_1_1,
-            #    m_z_0_1_1,
-            #    m_z_1_0_1,
-            #) = apply_boundary_conditions(
-            #    id_0_0_1,
-            #    id_0_1_0,
-            #    id_0_1_1,
-            #    id_1_0_0,
-            #    id_1_0_1,
-            #    id_1_1_0,
-            #    id_1_1_1,
-            #    m_x_1_1_1,
-            #    m_x_1_0_1,
-            #    m_x_1_1_0,
-            #    m_y_1_1_1,
-            #    m_y_0_1_1,
-            #    m_y_1_1_0,
-            #    m_z_1_1_1,
-            #    m_z_0_1_1,
-            #    m_z_1_0_1,
-            #)
+            ## Set zero on the boundaries
+            #if i == 0:
+            #    m_y_0_1_1 = 0.0 
+            #    m_z_0_1_1 = 0.0
+            #if j == 0:
+            #    m_x_1_0_1 = 0.0
+            #    m_z_1_0_1 = 0.0
+            #if k == 0:
+            #    m_x_1_1_0 = 0.0
+            #    m_y_1_1_0 = 0.0
 
             # get properties
             eps, sigma_e = YeeElectricFieldUpdate._get_eps_and_sigma_e(
@@ -269,17 +183,6 @@ class YeeElectricFieldUpdate(Operator):
             c_ee = wp.cw_div(2.0 * eps - sigma_e * dt, _denom)
             c_eh = (2.0 * dt) / wp.cw_mul(electric_field.spacing, _denom)
             c_ej = (-2.0 * dt) / _denom
-
-            # Get magnetic field stencil
-            m_x_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j, k)
-            m_x_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j - 1, k)
-            m_x_1_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j, k - 1)
-            m_y_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i, j, k)
-            m_y_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i - 1, j, k)
-            m_y_1_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i, j, k - 1)
-            m_z_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j, k)
-            m_z_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i - 1, j, k)
-            m_z_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j - 1, k)
 
             # Get curl of magnetic field
             curl_h_x = (m_z_1_1_1 - m_z_1_0_1) - (m_y_1_1_1 - m_y_1_1_0)
@@ -397,43 +300,9 @@ class YeeMagneticFieldUpdate(Operator):
 
         return wp.vec3(mu_x, mu_y, mu_z), wp.vec3(sigma_m_x, sigma_m_y, sigma_m_z)
 
-    @wp.func
-    def _do_nothing_boundary_conditions(
-        id_1_1_1: wp.uint8,
-        id_0_1_1: wp.uint8,
-        id_1_0_1: wp.uint8,
-        id_1_1_0: wp.uint8,
-        e_x_0_0_0: wp.float32,
-        e_x_0_1_0: wp.float32,
-        e_x_0_0_1: wp.float32,
-        e_y_0_0_0: wp.float32,
-        e_y_1_0_0: wp.float32,
-        e_y_0_0_1: wp.float32,
-        e_z_0_0_0: wp.float32,
-        e_z_1_0_0: wp.float32,
-        e_z_0_1_0: wp.float32,
-    ):
-        return (
-            e_x_0_0_0,
-            e_x_0_1_0,
-            e_x_0_0_1,
-            e_y_0_0_0,
-            e_y_1_0_0,
-            e_y_0_0_1,
-            e_z_0_0_0,
-            e_z_1_0_0,
-            e_z_0_1_0,
-        )
-
     def __init__(
         self,
-        apply_boundary_conditions: callable = None,
     ):
-
-        # Set boundary conditions functions
-        if apply_boundary_conditions is None:
-            apply_boundary_conditions = self._do_nothing_boundary_conditions
-
 
         @wp.kernel
         def _update_magnetic_field(
@@ -448,10 +317,10 @@ class YeeMagneticFieldUpdate(Operator):
             i, j, k = wp.tid()
     
             # Get material id
-            id_1_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k)
-            id_0_1_1 = periodic_indexing(id_field.data, id_field.shape, 0, i - 1, j, k)
-            id_1_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j - 1, k)
-            id_1_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k - 1)
+            id_1_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k)
+            id_0_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i - 1, j, k)
+            id_1_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j - 1, k)
+            id_1_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i, j, k - 1)
 
             # Get electric field stencil
             e_x_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, i, j, k)
@@ -464,32 +333,16 @@ class YeeMagneticFieldUpdate(Operator):
             e_z_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i + 1, j, k)
             e_z_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i, j + 1, k)
 
-            ## Apply boundary conditions
-            #(
-            #    e_x_0_0_0,
-            #    e_x_0_1_0,
-            #    e_x_0_0_1,
-            #    e_y_0_0_0,
-            #    e_y_1_0_0,
-            #    e_y_0_0_1,
-            #    e_z_0_0_0,
-            #    e_z_1_0_0,
-            #    e_z_0_1_0,
-            #) = apply_boundary_conditions(
-            #    id_1_1_1,
-            #    id_0_1_1,
-            #    id_1_0_1,
-            #    id_1_1_0,
-            #    e_x_0_0_0,
-            #    e_x_0_1_0,
-            #    e_x_0_0_1,
-            #    e_y_0_0_0,
-            #    e_y_1_0_0,
-            #    e_y_0_0_1,
-            #    e_z_0_0_0,
-            #    e_z_1_0_0,
-            #    e_z_0_1_0,
-            #)
+            ## Set zero on the boundaries
+            #if i == 0:
+            #    e_y_1_0_0 = 0.0
+            #    e_z_1_0_0 = 0.0
+            #if j == 0:
+            #    e_x_0_1_0 = 0.0
+            #    e_z_0_1_0 = 0.0
+            #if k == 0:
+            #    e_x_0_0_1 = 0.0
+            #    e_y_0_0_1 = 0.0
 
             # get properties
             mu, sigma_m = YeeMagneticFieldUpdate._sample_magnetic_property(
@@ -545,3 +398,5 @@ class YeeMagneticFieldUpdate(Operator):
             dim=magnetic_field.shape,
         )
         return magnetic_field
+
+

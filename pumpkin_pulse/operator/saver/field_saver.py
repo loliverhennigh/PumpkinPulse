@@ -7,58 +7,54 @@ from pumpkin_pulse.data.field import Fielduint8, Fieldfloat32, Fieldint32
 from pumpkin_pulse.operator.operator import Operator
 
 class FieldSaver(Operator):
-
     def __call__(
         self,
         fields: Dict[str, Union[Fielduint8, Fieldfloat32, Fieldint32]],
         filename: str,
     ):
 
-        # Check if fields is a list
+        # Check if fields is a dictionary
         if not isinstance(fields, dict):
             fields = {"field": fields}
 
-        # Get the first field
+        # Get the first field to extract common properties
         field = fields[list(fields.keys())[0]]
 
-        # Create grid
-        cell_centered_origin = field.origin
-        x_linespace = np.linspace(
-            cell_centered_origin[0],
-            cell_centered_origin[0] + field.spacing[0] * field.shape[0],
-            field.shape[0] + 1,
-        )
-        y_linespace = np.linspace(
-            cell_centered_origin[1],
-            cell_centered_origin[1] + field.spacing[1] * field.shape[1],
-            field.shape[1] + 1,
-        )
-        z_linespace = np.linspace(
-            cell_centered_origin[2],
-            cell_centered_origin[2] + field.spacing[2] * field.shape[2],
-            field.shape[2] + 1,
-        )
-        grid = pv.RectilinearGrid(
-            x_linespace,
-            y_linespace,
-            z_linespace,
+        # Compute the origin adjusted for cell-centered data
+        cell_centered_origin = np.array(field.origin)
+        cell_centered_origin[0] += field.spacing[0] * field.offset[0]
+        cell_centered_origin[1] += field.spacing[1] * field.offset[1]
+        cell_centered_origin[2] += field.spacing[2] * field.offset[2]
+
+        # Create the ImageData grid
+        grid = pv.ImageData(
+            dimensions=tuple(np.array(field.shape) + 1),
+            spacing=tuple(field.spacing),
+            origin=tuple(cell_centered_origin)
         )
 
-        # Add fields to grid
+        # Add fields to the ImageData
         for name, field in fields.items():
-            if field.data.shape[0] == 1:
-                grid.cell_data[name] = field.data.numpy().flatten(order="F")
-            elif field.data.shape[0] == 3:
-                np_field = field.data.numpy()
-                grid.cell_data[name + "_x"] = np_field[0].flatten(order="F")
-                grid.cell_data[name + "_y"] = np_field[1].flatten(order="F")
-                grid.cell_data[name + "_z"] = np_field[2].flatten(order="F")
-            else:
-                np_field = field.data.numpy()
-                for i in range(field.data.shape[0]):
-                    grid.cell_data[name + f"_{i}"] = np_field[i].flatten(order="F")
+            # Get numpy field data
+            np_field = field.data.numpy()
 
-        # Save grid
+            # Reshape the field based on its cardinality and ordering
+            if field.cardinality == 1:
+                np_field = np_field.flatten(order="F")
+            elif int(field.ordering) == 0:  # Structure of Arrays (SoA)
+                np_field = np.stack(
+                    [np_field[i].flatten(order="F") for i in range(field.cardinality)],
+                    axis=1,
+                ).reshape(-1, field.cardinality, order="F")
+            elif int(field.ordering) == 1:  # Array of Structures (AoS)
+                np_field = np_field.reshape(-1, field.cardinality, order="F")
+            else:
+                raise ValueError(f"Unknown ordering {field.ordering}")
+
+            # Add the field to the grid as cell data
+            grid.cell_data[name] = np_field
+
+        # Save the ImageData as an image VTK file
         grid.save(filename)
 
         return None

@@ -496,18 +496,18 @@ class EulerUpdate(Operator):
                 stencil[1], stencil[2], stencil[3], stencil[4], stencil[5], stencil[6], spacing
             )
     
-            # Slope limiter
-            v_dxyz = slope_limiter_3d(
-                stencil[0],
-                stencil[1],
-                stencil[2],
-                stencil[3],
-                stencil[4],
-                stencil[5],
-                stencil[6],
-                v_dxyz,
-                spacing,
-            )
+            ## Slope limiter
+            #v_dxyz = slope_limiter_3d(
+            #    stencil[0],
+            #    stencil[1],
+            #    stencil[2],
+            #    stencil[3],
+            #    stencil[4],
+            #    stencil[5],
+            #    stencil[6],
+            #    v_dxyz,
+            #    spacing,
+            #)
     
             return v_dxyz
 

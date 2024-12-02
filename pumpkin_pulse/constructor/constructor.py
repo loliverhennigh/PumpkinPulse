@@ -1,6 +1,7 @@
 # Purpose: Base class for constructing the fields and transforming the operators between them
 
 import warp as wp
+from typing import Union
 
 from pumpkin_pulse.data.field import Field, Fieldint32
 from pumpkin_pulse.data.particles import Particles
@@ -11,26 +12,56 @@ class Constructor:
     Base class for constructing the fields and transforming the operators
     """
 
-    def __init__(self):
-        pass
+    def __init__(
+        self,
+        shape: tuple,
+        origin: tuple,
+        spacing: tuple,
+    ):
+        self.shape = shape
+        self.origin = origin
+        self.spacing = spacing
 
     def create_field(
         self,
         dtype: type,
         cardinality: int,
-        shape: tuple,
-        origin: tuple,
-        spacing: tuple,
+        offset: tuple = None,
+        shape: tuple = None,
+        ordering: Union[int, str] = "SoA",
     ):
+
+        # Get ordering as integer
+        if not isinstance(ordering, int):
+            if ordering == "SoA":
+                ordering = 0
+            elif ordering == "AoS":
+                ordering = 1
+            else:
+                raise ValueError(f"Unknown ordering: {ordering}")
+
+        # Get offset and shape
+        if offset is None:
+            offset = (0, 0, 0)
+        if shape is None:
+            shape = self.shape
+
         # Allocate the field
         field = Field(dtype)()
 
         # Set the field properties
-        field.data = wp.zeros([cardinality] + list(shape), dtype=dtype)
+        if ordering == 0:
+            field.data = wp.zeros([cardinality] + list(shape), dtype=dtype)
+        elif ordering == 1:
+            field.data = wp.zeros(list(shape) + [cardinality], dtype=dtype)
+        else:
+            raise ValueError(f"Unknown ordering: {ordering}")
         field.cardinality = wp.int32(cardinality)
         field.shape = wp.vec3i(shape)
-        field.origin = wp.vec3(origin)
-        field.spacing = wp.vec3(spacing)
+        field.origin = wp.vec3(self.origin)
+        field.spacing = wp.vec3(self.spacing)
+        field.offset = wp.vec3i(offset)
+        field.ordering = wp.uint8(ordering)
 
         return field
 

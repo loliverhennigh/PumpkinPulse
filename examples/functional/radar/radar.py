@@ -136,21 +136,24 @@ if __name__ == '__main__':
         cardinality=1,
         shape=shape,
         origin=origin,
-        spacing=spacing
+        spacing=spacing,
+        ordering=0,
     )
     electric_field = constructor.create_field(
         dtype=wp.float32,
         cardinality=3,
         shape=shape,
         origin=origin,
-        spacing=spacing
+        spacing=spacing,
+        ordering=0,
     )
     magnetic_field = constructor.create_field(
         dtype=wp.float32,
         cardinality=3,
         shape=shape,
         origin=origin,
-        spacing=spacing
+        spacing=spacing,
+        ordering=0,
     )
 
     # Make material property mappings

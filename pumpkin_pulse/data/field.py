@@ -20,6 +20,8 @@ class Fieldfloat32:
     origin: wp.vec3
     spacing: wp.vec3
     shape: wp.vec3i
+    offset: wp.vec3i
+    ordering: wp.uint8 # 0: SoA, 1: AoS
 
 @wp.struct
 class Fieldint32:
@@ -31,6 +33,8 @@ class Fieldint32:
     origin: wp.vec3
     spacing: wp.vec3
     shape: wp.vec3i
+    offset: wp.vec3i
+    ordering: wp.uint8 # 0: SoA, 1: AoS
 
 @wp.struct
 class Fielduint8:
@@ -42,3 +46,5 @@ class Fielduint8:
     origin: wp.vec3
     spacing: wp.vec3
     shape: wp.vec3i
+    offset: wp.vec3i
+    ordering: wp.uint8 # 0: SoA, 1: AoS
