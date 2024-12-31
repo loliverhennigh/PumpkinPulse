@@ -1,6 +1,6 @@
 import warp as wp
 
-from pumpkin_pulse.functional.indexing import periodic_indexing
+from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexing_uint8
 
 # 7 point stencil
 # 0: ( 0, 0, 0)
@@ -145,13 +145,13 @@ def get_p7_uint8_stencil(
     k: wp.int32,
 ):
     stencil = p7_uint8_stencil_type(
-        periodic_indexing(data, shape, c, i + 0, j - 0, k - 0),
-        periodic_indexing(data, shape, c, i - 1, j + 0, k - 0),
-        periodic_indexing(data, shape, c, i + 1, j + 0, k - 0),
-        periodic_indexing(data, shape, c, i + 0, j - 1, k + 0),
-        periodic_indexing(data, shape, c, i + 0, j + 1, k + 0),
-        periodic_indexing(data, shape, c, i + 0, j + 0, k - 1),
-        periodic_indexing(data, shape, c, i + 0, j + 0, k + 1),
+        periodic_indexing_uint8(data, shape, c, i + 0, j - 0, k - 0),
+        periodic_indexing_uint8(data, shape, c, i - 1, j + 0, k - 0),
+        periodic_indexing_uint8(data, shape, c, i + 1, j + 0, k - 0),
+        periodic_indexing_uint8(data, shape, c, i + 0, j - 1, k + 0),
+        periodic_indexing_uint8(data, shape, c, i + 0, j + 1, k + 0),
+        periodic_indexing_uint8(data, shape, c, i + 0, j + 0, k - 1),
+        periodic_indexing_uint8(data, shape, c, i + 0, j + 0, k + 1),
     )
     return stencil
 

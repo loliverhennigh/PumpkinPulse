@@ -109,16 +109,24 @@ class YeeElectricFieldUpdate(Operator):
             curl_h_z = (m_y_1_1_1 - m_y_0_1_1) - (m_x_1_1_1 - m_x_1_0_1)
             curl_h = wp.vec3(curl_h_x, curl_h_y, curl_h_z)
 
+            # Get Impressed current
+            impressed_current_i = i + electric_field.offset[0] - impressed_current.offset[0]
+            impressed_current_j = j + electric_field.offset[1] - impressed_current.offset[1]
+            impressed_current_k = k + electric_field.offset[2] - impressed_current.offset[2]
+            if impressed_current_i >= 0 and impressed_current_i < impressed_current.shape[0] and impressed_current_j >= 0 and impressed_current_j < impressed_current.shape[1] and impressed_current_k >= 0 and impressed_current_k < impressed_current.shape[2]:
+                cur = wp.vec3f(
+                    impressed_current.data[0, impressed_current_i, impressed_current_j, impressed_current_k],
+                    impressed_current.data[1, impressed_current_i, impressed_current_j, impressed_current_k],
+                    impressed_current.data[2, impressed_current_i, impressed_current_j, impressed_current_k],
+                )
+            else:
+                cur = wp.vec3f(0.0, 0.0, 0.0)
+
             # compute new electric field
             e = wp.vec3f(
                 electric_field.data[0, i, j, k],
                 electric_field.data[1, i, j, k],
                 electric_field.data[2, i, j, k],
-            )
-            cur = wp.vec3f(
-                impressed_current.data[0, i, j, k],
-                impressed_current.data[1, i, j, k],
-                impressed_current.data[2, i, j, k],
             )
             new_e = wp.cw_mul(c_ee, e) + wp.cw_mul(c_eh, curl_h) + wp.cw_mul(c_ej, cur)
 

@@ -29,9 +29,12 @@ class CapacitorCircuit(Operator):
         cable_thickness_y: float,
         insulator_thickness: float,
         dielectric_thickness: float,
-        center: tuple = (0.0, 0.0, 0.0),
-        centeraxis: tuple = (0.0, 1.0, 0.0),
-        angle: float = 0.0,
+        center_0: tuple = (0.0, 0.0, 0.0),
+        centeraxis_0: tuple = (0.0, 1.0, 0.0),
+        angle_0: float = 0.0,
+        center_1: tuple = (0.0, 0.0, 0.0),
+        centeraxis_1: tuple = (0.0, 1.0, 0.0),
+        angle_1: float = 0.0,
         conductor_id: int = 1,
         insulator_id: int = 2,
         dielectric_id: int = 3,
@@ -44,9 +47,14 @@ class CapacitorCircuit(Operator):
         self.cable_thickness_r = cable_thickness_r
         self.cable_thickness_y = cable_thickness_y
         self.insulator_thickness = insulator_thickness
-        self.center = center
-        self.centeraxis = centeraxis
-        self.angle = angle
+        self.dielectric_thickness = dielectric_thickness
+        center = center_0
+        self.center_0 = center_0
+        self.centeraxis_0 = centeraxis_0
+        self.angle_0 = angle_0
+        self.center_1 = center_1
+        self.centeraxis_1 = centeraxis_1
+        self.angle_1 = angle_1
         self.conductor_id = conductor_id
         self.insulator_id = insulator_id
         self.dielectric_id = dielectric_id
@@ -197,36 +205,94 @@ class CapacitorCircuit(Operator):
             ),
         )
 
-        # Rotate the elements
+        # Make insulator element
+        insulator_sdf = SignedDistanceFunction.box(
+            center=(
+                center[0] + coil_radius + 1.0 * cable_thickness_r,
+                center[1],
+                center[2],
+            ),
+            size=(
+                1.0 * cable_thickness_r,
+                cable_thickness_y / 2.0,
+                insulator_thickness / 2.0,
+            ),
+        )
+
+        # Rotate the elements on axis 0
         conductor_sdf = SignedDistanceFunction.rotate(
             sdf=conductor_sdf,
-            center=center,
-            centeraxis=centeraxis,
-            angle=angle,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
         )
         switch_sdf_0 = SignedDistanceFunction.rotate(
             sdf=switch_sdf_0,
-            center=center,
-            centeraxis=centeraxis,
-            angle=angle,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
         )
         switch_sdf_1 = SignedDistanceFunction.rotate(
             sdf=switch_sdf_1,
-            center=center,
-            centeraxis=centeraxis,
-            angle=angle,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
         )
         resistor_sdf = SignedDistanceFunction.rotate(
             sdf=resistor_sdf,
-            center=center,
-            centeraxis=centeraxis,
-            angle=angle,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
         )
         dielectric_sdf = SignedDistanceFunction.rotate(
             sdf=dielectric_sdf,
-            center=center,
-            centeraxis=centeraxis,
-            angle=angle,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
+        )
+        insulator_sdf = SignedDistanceFunction.rotate(
+            sdf=insulator_sdf,
+            center=center_0,
+            centeraxis=centeraxis_0,
+            angle=angle_0,
+        )
+
+        # Rotate the elements on axis 1
+        conductor_sdf = SignedDistanceFunction.rotate(
+            sdf=conductor_sdf,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
+        )
+        switch_sdf_0 = SignedDistanceFunction.rotate(
+            sdf=switch_sdf_0,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
+        )
+        switch_sdf_1 = SignedDistanceFunction.rotate(
+            sdf=switch_sdf_1,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
+        )
+        resistor_sdf = SignedDistanceFunction.rotate(
+            sdf=resistor_sdf,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
+        )
+        dielectric_sdf = SignedDistanceFunction.rotate(
+            sdf=dielectric_sdf,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
+        )
+        insulator_sdf = SignedDistanceFunction.rotate(
+            sdf=insulator_sdf,
+            center=center_1,
+            centeraxis=centeraxis_1,
+            angle=angle_1,
         )
 
         # Make operator
@@ -235,6 +301,7 @@ class CapacitorCircuit(Operator):
         self.switch_operator_1 = SignedDistanceFunction(sdf_func=switch_sdf_1)
         self.resistor_operator = SignedDistanceFunction(sdf_func=resistor_sdf)
         self.dielectric_operator = SignedDistanceFunction(sdf_func=dielectric_sdf)
+        self.insulator_operator = SignedDistanceFunction(sdf_func=insulator_sdf)
 
     @property
     def capacitor_surface_area(self):
@@ -247,8 +314,9 @@ class CapacitorCircuit(Operator):
 
         # Apply conductor operator
         id_field = self.cunductor_operator(id_field, self.conductor_id)
+        id_field = self.insulator_operator(id_field, self.insulator_id)
         id_field = self.switch_operator_0(id_field, self.switch_id)
-        id_field = self.switch_operator_1(id_field, self.switch_id)
+        id_field = self.switch_operator_1(id_field, self.conductor_id)
         id_field = self.resistor_operator(id_field, self.resistor_id)
         id_field = self.dielectric_operator(id_field, self.dielectric_id)
 

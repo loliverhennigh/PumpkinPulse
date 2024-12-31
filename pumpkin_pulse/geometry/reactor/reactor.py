@@ -6,9 +6,6 @@ import copy
 from build123d import *
 from build123d import tuplify
 
-from pumpkin_pulse.geometry.electrode.cylindrical_electrode import (
-    CylindricalElectrode,
-)
 from pumpkin_pulse.geometry.electrode.llp_electrode import LLPElectrode
 from pumpkin_pulse.geometry.feedthrough.feedthrough import Feedthrough
 from pumpkin_pulse.geometry.capacitor.capacitor import Capacitor
@@ -30,30 +27,31 @@ class LLPReactor(Compound):
         self,
         electrode_material: Material = COPPER,
         insulator_material: Material = QUARTZ,
-        anode_height: float = 15,
-        anode_outer_diameter: float = 10,
-        anode_inner_diameter: float = 5,
-        anode_fillet_radius: float = 1,
-        insulator_thickness: float = 1,
-        insulator_height: float = 5,
-        cathode_height: float = 30,
-        cathode_outer_diameter: float = 25,
-        cathode_inner_diameter: float = 18,
-        cathode_nr_spokes: int = 6,
-        cathode_spoke_pitch: float = 200.0,
-        cathode_fillet_radius: float = 0.5,
-        capacitor_width: float = 30,
-        conductor_plate_thickness: float = 2,
-        dielectric_thickness: float = 2,
+        anode_height: float = .025,
+        anode_outer_diameter: float = .010,
+        anode_inner_diameter: float = .005,
+        anode_fillet_radius: float = .001,
+        insulator_thickness: float = .001,
+        insulator_height: float = .005,
+        cathode_height: float = .025,
+        cathode_outer_diameter: float = .030,
+        cathode_inner_diameter: float = .023,
+        cathode_nr_spokes: int = 18,
+        cathode_spoke_pitch: float = 20000.0,
+        cathode_fillet_radius: float = 0.0005,
+        capacitor_width: float = .010,
+        conductor_plate_thickness: float = .002,
+        dielectric_thickness: float = .002,
         capacitance: float = 1.0,
-        cable_diameter: float = 2.5,
-        cable_insulator_thickness: float = 0.5,
-        feedthrough_length: float = 10,
-        resistor_length: float = 5,
-        resistance: float = 1.0,
-        chamber_diameter: float = 40,
-        chamber_height: float = 50,
-        chamber_thickness: float = 1.5,
+        voltage: float = 1.0,
+        cable_diameter: float = .0025,
+        cable_insulator_thickness: float = 0.0005,
+        feedthrough_length: float = 0.01,
+        resistor_length: float = 0.005,
+        resistor_conductivity: float = 0.01,
+        chamber_diameter: float = 0.040,
+        chamber_height: float = 0.050,
+        chamber_thickness: float = 0.005,
     ):
         # Create electrode
         llp_electrode = LLPElectrode(
@@ -61,7 +59,7 @@ class LLPReactor(Compound):
             anode_outer_diameter=anode_outer_diameter,
             anode_inner_diameter=anode_inner_diameter,
             anode_fillet_radius=anode_fillet_radius,
-            insulator_thickness=insulator_thickness,
+            insulator_thickness=2.0 * insulator_thickness,
             insulator_height=insulator_height,
             cathode_height=cathode_height,
             cathode_outer_diameter=cathode_outer_diameter,
@@ -78,6 +76,8 @@ class LLPReactor(Compound):
             cathode_outer_diameter=cathode_outer_diameter,
             insulator_thickness=insulator_thickness,
             feedthrough_length=feedthrough_length,
+            cable_diameter=cable_diameter,
+            cable_insulator_thickness=cable_insulator_thickness,
         )
 
         # Make capacitor
@@ -86,6 +86,7 @@ class LLPReactor(Compound):
             conductor_plate_thickness=conductor_plate_thickness,
             dielectric_thickness=dielectric_thickness,
             capacitance=capacitance,
+            voltage=voltage,
             cable_diameter=cable_diameter,
             cable_insulator_thickness=cable_insulator_thickness,
             electrode_material=electrode_material,
@@ -97,19 +98,19 @@ class LLPReactor(Compound):
             diameter=cable_diameter,
             insulator_thickness=cable_insulator_thickness,
             length=resistor_length,
-            resistance=resistance,
+            conductivity=resistor_conductivity,
             insulator_material=insulator_material,
         )
         cathode_resistor = Resistor(
             diameter=cable_diameter,
             insulator_thickness=cable_insulator_thickness,
             length=resistor_length,
-            resistance=resistance,
+            conductivity=resistor_conductivity,
             insulator_material=insulator_material,
         )
 
         # Make cable from resistor to capacitor
-        linear_path_length = max((capacitor_width / 2) - resistor_length, 1.0)
+        linear_path_length = max((capacitor_width / 2) - resistor_length, 0.005)
         linear_path = Line((0, 0, 0), (0, 0, linear_path_length))
         capacitor_thickness = 4 * conductor_plate_thickness + dielectric_thickness
         radius = (
@@ -138,7 +139,7 @@ class LLPReactor(Compound):
             chamber_diameter=chamber_diameter,
             chamber_height=chamber_height,
             chamber_thickness=chamber_thickness,
-            material=electrode_material,
+            material=insulator_material,
         )
 
         # Make vacuum area

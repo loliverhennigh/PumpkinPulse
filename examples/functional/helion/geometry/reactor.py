@@ -22,6 +22,37 @@ from pumpkin_pulse.operator.saver import FieldSaver
 from geometry.chamber import Chamber
 from geometry.circuit import CapacitorCircuit
 
+
+class FillIdField(Operator):
+
+    @wp.kernel
+    def _ramp_electric_field(
+        id_field: Fielduint8,
+        id_value: wp.uint8,
+    ):
+        # Get index
+        i, j, k = wp.tid()
+
+        # Get id value
+        id_field.data[0, i, j, k] = id_value
+
+    def __call__(
+        self,
+        id_field: Fielduint8,
+        id_value: wp.uint8,
+    ):
+        # Launch kernel
+        wp.launch(
+            self._ramp_electric_field,
+            inputs=[
+                id_field,
+                id_value,
+            ],
+            dim=id_field.shape,
+        )
+
+        return id_field
+
 class Reactor(Operator):
     def __init__(
         self,
@@ -37,6 +68,7 @@ class Reactor(Operator):
         diverter_bounds: float,
         insulator_thickness: float,
         dielectric_thickness: float,
+        background_id: int,
         vacuum_id: int,
         chamber_id: int,
         conductor_id: int,
@@ -46,26 +78,30 @@ class Reactor(Operator):
         interaction_cable_thickness_y: float,
         interaction_resistor_id: int,
         interaction_switch_id: List[int],
-        interaction_dielectric_id: int,
+        interaction_dielectric_id: List[int],
         nr_acceleration_coils: int,
         accelerator_cable_thickness_r: float,
         accelerator_cable_thickness_y: float,
         accelerator_resistor_id: int,
         accelerator_switch_id: List[int],
-        accelerator_dielectric_id: int,
+        accelerator_dielectric_id: List[int],
         nr_formation_coils: int,
         formation_cable_thickness_r: float,
         formation_cable_thickness_y: float,
         formation_resistor_id: int,
         formation_switch_id: List[int],
-        formation_dielectric_id: int,
+        formation_dielectric_id: List[int],
         nr_diverter_inlet_coils: int,
         diverter_inlet_cable_thickness_r: float,
         diverter_inlet_cable_thickness_y: float,
         diverter_inlet_resistor_id: int,
         diverter_inlet_switch_id: List[int],
-        diverter_inlet_dielectric_id: int,
+        diverter_inlet_dielectric_id: List[int],
     ):
+
+        # Set Background
+        self.background_operator = FillIdField()
+        self.background_id = background_id
 
         # Make the Chamber operator
         self.chamber_operator = Chamber(
@@ -96,12 +132,15 @@ class Reactor(Operator):
                 cable_thickness_y=interaction_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(interaction_positions[i], 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(interaction_positions[i], 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(interaction_positions[i], 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=interaction_dielectric_id,
+                dielectric_id=interaction_dielectric_id[i],
                 switch_id=interaction_switch_id[i],
                 resistor_id=interaction_resistor_id,
             )
@@ -127,12 +166,15 @@ class Reactor(Operator):
                 cable_thickness_y=accelerator_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(-float(accelerator_coil_posistions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(-float(accelerator_coil_posistions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(-float(accelerator_coil_posistions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=accelerator_dielectric_id,
+                dielectric_id=accelerator_dielectric_id[i],
                 switch_id=accelerator_switch_id[i],
                 resistor_id=accelerator_resistor_id,
             )
@@ -142,12 +184,15 @@ class Reactor(Operator):
                 cable_thickness_y=accelerator_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(float(accelerator_coil_posistions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(float(accelerator_coil_posistions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(float(accelerator_coil_posistions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=accelerator_dielectric_id,
+                dielectric_id=accelerator_dielectric_id[i],
                 switch_id=accelerator_switch_id[i],
                 resistor_id=accelerator_resistor_id,
             )
@@ -168,12 +213,15 @@ class Reactor(Operator):
                 cable_thickness_y=formation_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(float(formation_positions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(float(formation_positions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(float(formation_positions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=formation_dielectric_id,
+                dielectric_id=formation_dielectric_id[i],
                 switch_id=formation_switch_id[i],
                 resistor_id=formation_resistor_id,
             )
@@ -183,12 +231,15 @@ class Reactor(Operator):
                 cable_thickness_y=formation_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(-float(formation_positions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(-float(formation_positions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(-float(formation_positions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=formation_dielectric_id,
+                dielectric_id=formation_dielectric_id[i],
                 switch_id=formation_switch_id[i],
                 resistor_id=formation_resistor_id,
             )
@@ -209,12 +260,15 @@ class Reactor(Operator):
                 cable_thickness_y=diverter_inlet_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(float(diverter_inlet_positions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(float(diverter_inlet_positions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(float(diverter_inlet_positions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=diverter_inlet_dielectric_id,
+                dielectric_id=diverter_inlet_dielectric_id[i],
                 switch_id=diverter_inlet_switch_id[i],
                 resistor_id=diverter_inlet_resistor_id,
             )
@@ -224,12 +278,15 @@ class Reactor(Operator):
                 cable_thickness_y=diverter_inlet_cable_thickness_y,
                 insulator_thickness=insulator_thickness,
                 dielectric_thickness=dielectric_thickness,
-                center=(-float(diverter_inlet_positions[i]), 0.0, 0.0),
-                centeraxis=(0.0, 0.0, 1.0),
-                angle=np.pi / 2,
+                center_0=(-float(diverter_inlet_positions[i]), 0.0, 0.0),
+                centeraxis_0=(0.0, 0.0, 1.0),
+                angle_0=np.pi / 2,
+                center_1=(-float(diverter_inlet_positions[i]), 0.0, 0.0),
+                centeraxis_1=(1.0, 0.0, 0.0),
+                angle_1=np.pi if i % 2 == 0 else 0.0,
                 conductor_id=conductor_id,
                 insulator_id=insulator_id,
-                dielectric_id=diverter_inlet_dielectric_id,
+                dielectric_id=diverter_inlet_dielectric_id[i],
                 switch_id=diverter_inlet_switch_id[i],
                 resistor_id=diverter_inlet_resistor_id,
             )
@@ -242,6 +299,7 @@ class Reactor(Operator):
     ) -> Fielduint8:
 
         # Initialize id field
+        id_field = self.background_operator(id_field, self.background_id)
         id_field = self.chamber_operator(id_field)
         for coil_operator in self.coil_operators:
             id_field = coil_operator(id_field)
@@ -342,6 +400,7 @@ if __name__ == "__main__":
         dielectric_thickness=dielectric_thickness,
         vacuum_id=vacuum_id,
         chamber_id=chamber_id,
+        air_id=0,
         conductor_id=2,
         insulator_id=3,
         nr_interaction_coils=nr_interaction_coils,

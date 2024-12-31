@@ -81,7 +81,7 @@ class InitializeVel(Operator):
 if __name__ == '__main__':
 
     # Define simulation parameters
-    dx = 0.0001
+    dx = 0.001
     origin = (0.0, 0.0, 0.0)
     spacing = (dx, dx, 1.0)
     shape = (int(1.0 / dx), int(1.0 / dx), 1)
@@ -97,7 +97,11 @@ if __name__ == '__main__':
         os.makedirs(output_dir)
 
     # Make the constructor
-    constructor = Constructor()
+    constructor = Constructor(
+        shape=shape,
+        origin=origin,
+        spacing=spacing,
+    )
 
     # Make the operators
     initialize_vel = InitializeVel()
@@ -112,50 +116,36 @@ if __name__ == '__main__':
         dtype=wp.float32,
         cardinality=1,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     velocity = constructor.create_field(
         dtype=wp.float32,
         cardinality=3,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     pressure = constructor.create_field(
         dtype=wp.float32,
         cardinality=1,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     mass = constructor.create_field(
         dtype=wp.float32,
         cardinality=1,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     momentum = constructor.create_field(
         dtype=wp.float32,
         cardinality=3,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     energy = constructor.create_field(
         dtype=wp.float32,
         cardinality=1,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
     id_field = constructor.create_field(
         dtype=wp.uint8,
         cardinality=1,
         shape=shape,
-        origin=origin,
-        spacing=spacing
     )
 
     # Initialize the cavity
@@ -246,24 +236,25 @@ if __name__ == '__main__':
             #plt.show()
             #exit()
 
-            remander = current_time % save_frequency
-            if (remander + dt) > save_frequency:
-                print("Here")
-                field_saver(
-                    {
-                        "density": density,
-                        "velocity": velocity,
-                        "pressure": pressure,
-                        "mass": mass,
-                        "momentum": momentum,
-                        "energy": energy,
-                    },
-                    os.path.join(output_dir, f"t_{str(save_index).zfill(4)}.vtk")
-                )
-                save_index += 1
+            #remander = current_time % save_frequency
+            #if (remander + dt) > save_frequency:
+            #    print("Here")
+            #    field_saver(
+            #        {
+            #            "density": density,
+            #            "velocity": velocity,
+            #            "pressure": pressure,
+            #            "mass": mass,
+            #            "momentum": momentum,
+            #            "energy": energy,
+            #        },
+            #        os.path.join(output_dir, f"t_{str(save_index).zfill(4)}.vtk")
+            #    )
+            #    save_index += 1
 
 
             # Compute MUPS
+            exit()
             if nr_iterations % 10 == 0:
                 wp.synchronize()
                 toc = time.time()
@@ -280,7 +271,7 @@ if __name__ == '__main__':
             current_time += dt
 
             # Update the progress bar
-            pbar.update(dt)
+            pbar.update(float(dt))
 
             # Update the number of iterations
             nr_iterations += 1

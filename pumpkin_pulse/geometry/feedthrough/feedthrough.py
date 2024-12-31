@@ -5,7 +5,7 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.material import Material, QUARTZ, COPPER
+from pumpkin_pulse.material import Material, QUARTZ, COPPER
 
 
 class Feedthrough(Compound):

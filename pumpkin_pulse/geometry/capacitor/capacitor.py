@@ -5,7 +5,7 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.material import Material, QUARTZ, COPPER
+from pumpkin_pulse.material import Material, QUARTZ, COPPER
 
 
 class Capacitor(Compound):
@@ -21,6 +21,7 @@ class Capacitor(Compound):
         cable_diameter: float = 2.5,
         cable_insulator_thickness: float = 0.5,
         capacitance: float = 1.0,
+        voltage: float = 1.0,
         dielectric_material_name: str = "dielectric",
         electrode_material: Material = COPPER,
         insulator_material: Material = QUARTZ,
@@ -58,6 +59,7 @@ class Capacitor(Compound):
             mu=4 * 3.14159e-7,
             sigma_e=0,
             sigma_m=0,
+            initial_e = voltage / dielectric_thickness,
         )
         dielectric.material = dielectric_material
         dielectric.color = Color(dielectric_material.color)

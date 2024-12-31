@@ -5,12 +5,12 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.geometry.electrode.cylindrical_electrode import (
+from pumpkin_pulse.geometry.electrode.spoked_electrode import SpokedElectrode
+from pumpkin_pulse.geometry.electrode.anode_insulator import AnodeInsulator
+from pumpkin_pulse.material import Material, QUARTZ, COPPER
+from pumpkin_pulse.geometry.electrode.cylindrical_electrode import (
     CylindricalElectrode,
 )
-from dense_plasma_focus.geometry.electrode.spoked_electrode import SpokedElectrode
-from dense_plasma_focus.geometry.electrode.anode_insulator import AnodeInsulator
-from dense_plasma_focus.material import Material, QUARTZ, COPPER
 
 
 class LLPElectrode(Compound):
@@ -45,17 +45,17 @@ class LLPElectrode(Compound):
         anode_electrode.label = "anode"
         anode_electrode.material = electrode_material
         anode_electrode.color = Color(electrode_material.color)
-        anode_insulator = AnodeInsulator(
-            outer_diameter=anode_outer_diameter + insulator_thickness,
-            inner_diameter=anode_outer_diameter,
-            height=insulator_height,
-        )
-        anode_insulator.label = "anode_insulator"
-        anode_insulator.material = insulator_material
-        anode_insulator.color = Color(insulator_material.color)
-        anode_electrode.joints["feedthrough"].connect_to(
-            anode_insulator.joints["feedthrough"]
-        )
+        #anode_insulator = AnodeInsulator(
+        #    outer_diameter=anode_outer_diameter + insulator_thickness,
+        #    inner_diameter=anode_outer_diameter,
+        #    height=insulator_height,
+        #)
+        #anode_insulator.label = "anode_insulator"
+        #anode_insulator.material = insulator_material
+        #anode_insulator.color = Color(insulator_material.color)
+        #anode_electrode.joints["feedthrough"].connect_to(
+        #    anode_insulator.joints["feedthrough"]
+        #)
 
         # Create cathode
         cathode_electrode = SpokedElectrode(
@@ -69,16 +69,16 @@ class LLPElectrode(Compound):
         cathode_electrode.label = "cathode"
         cathode_electrode.material = electrode_material
         cathode_electrode.color = Color(electrode_material.color)
-        cathode_electrode.joints["feedthrough"].connect_to(
-            anode_insulator.joints["feedthrough"]
-        )
+        #cathode_electrode.joints["feedthrough"].connect_to(
+        #    anode_insulator.joints["feedthrough"]
+        #)
 
         # Call super constructor
         super().__init__(
             label="LLP_Electrode",
             children=[
                 anode_electrode,
-                anode_insulator,
+                #anode_insulator,
                 cathode_electrode,
             ],
         )

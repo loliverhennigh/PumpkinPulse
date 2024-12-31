@@ -5,7 +5,7 @@ import warp as wp
 
 from pumpkin_pulse.data.field import Fieldfloat32, Fielduint8
 from pumpkin_pulse.operator.operator import Operator
-from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_atomic_add
+from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexing_uint8, periodic_atomic_add
 from pumpkin_pulse.functional.finite_difference import centeral_difference
 from pumpkin_pulse.functional.slope_limiter import minmod_slope_limiter
 from pumpkin_pulse.functional.stencil import (
@@ -183,45 +183,59 @@ class GetTimeStep(Operator):
     Get time step based on CFL condition for Euler's equations
     """
 
-    @wp.kernel
-    def _get_time_step(
-        density: Fieldfloat32,
-        velocity: Fieldfloat32,
-        pressure: Fieldfloat32,
-        id_field: Fielduint8,
-        time_step: wp.array(dtype=wp.float32),
-        courant_factor: wp.float32,
-        gamma: wp.float32,
+    def __init__(
+        self,
+        fluid_id: int = 0,
     ):
-        # Get index
-        i, j, k = wp.tid()
 
-        # Check if inside domain
-        if id_field.data[0, i, j, k] != wp.uint8(0):
-            return
+        fluid_id = wp.constant(wp.uint8(fluid_id))
+ 
+        @wp.kernel
+        def _get_time_step(
+            density: Fieldfloat32,
+            velocity: Fieldfloat32,
+            pressure: Fieldfloat32,
+            id_field: Fielduint8,
+            time_step: wp.array(dtype=wp.float32),
+            courant_factor: wp.float32,
+            gamma: wp.float32,
+        ):
+            # Get index
+            i, j, k = wp.tid()
 
-        # Get min spacing
-        min_spacing = wp.min(
-            wp.min(density.spacing[0], density.spacing[1]), density.spacing[2]
-        )
+            # Get index for id field
+            id_field_i = i + density.offset[0] - id_field.offset[0]
+            id_field_j = j + density.offset[0] - id_field.offset[1]
+            id_field_k = k + density.offset[0] - id_field.offset[2]
 
-        # Get variables
-        rho = density.data[0, i, j, k]
-        vel = wp.vec3f(
-            velocity.data[0, i, j, k],
-            velocity.data[1, i, j, k],
-            velocity.data[2, i, j, k],
-        )
-        p = pressure.data[0, i, j, k]
+            # Check if inside domain
+            if id_field.data[0, id_field_i, id_field_j, id_field_k] != fluid_id:
+                return
 
-        # Get CFL
-        if rho <= 0.0:
-            cfl = courant_factor * min_spacing / wp.length(vel)
-        else:
-            cfl = courant_factor * min_spacing / (wp.sqrt(gamma * p / rho) + wp.length(vel))
+            # Get min spacing
+            min_spacing = wp.min(
+                wp.min(density.spacing[0], density.spacing[1]), density.spacing[2]
+            )
 
-        # Update time step
-        wp.atomic_min(time_step, 0, cfl)
+            # Get variables
+            rho = density.data[0, i, j, k]
+            vel = wp.vec3f(
+                velocity.data[0, i, j, k],
+                velocity.data[1, i, j, k],
+                velocity.data[2, i, j, k],
+            )
+            p = pressure.data[0, i, j, k]
+
+            # Get CFL
+            if rho <= 0.0:
+                cfl = courant_factor * min_spacing / wp.length(vel)
+            else:
+                cfl = courant_factor * min_spacing / (wp.sqrt(gamma * p / rho) + wp.length(vel))
+
+            # Update time step
+            wp.atomic_min(time_step, 0, cfl)
+
+        self._get_time_step = _get_time_step
 
     def __call__(
         self,
@@ -456,6 +470,7 @@ class EulerUpdate(Operator):
         apply_boundary_conditions_p7: callable = None,
         apply_boundary_conditions_faces: callable = None,
         slope_limiter: callable = None,
+        fluid_id: int = 0,
     ):
         # Set boundary conditions functions
         if apply_boundary_conditions_p7 is None:
@@ -466,6 +481,9 @@ class EulerUpdate(Operator):
         # Set slope limiter
         if slope_limiter is None:
             slope_limiter = minmod_slope_limiter
+
+        # Set fluid id
+        fluid_id = wp.constant(wp.uint8(fluid_id))
 
         # Make 3d slope limiter function
         @wp.func
@@ -496,18 +514,18 @@ class EulerUpdate(Operator):
                 stencil[1], stencil[2], stencil[3], stencil[4], stencil[5], stencil[6], spacing
             )
     
-            ## Slope limiter
-            #v_dxyz = slope_limiter_3d(
-            #    stencil[0],
-            #    stencil[1],
-            #    stencil[2],
-            #    stencil[3],
-            #    stencil[4],
-            #    stencil[5],
-            #    stencil[6],
-            #    v_dxyz,
-            #    spacing,
-            #)
+            # Slope limiter
+            v_dxyz = slope_limiter_3d(
+                stencil[0],
+                stencil[1],
+                stencil[2],
+                stencil[3],
+                stencil[4],
+                stencil[5],
+                stencil[6],
+                v_dxyz,
+                spacing,
+            )
     
             return v_dxyz
 
@@ -527,13 +545,18 @@ class EulerUpdate(Operator):
             # Get index
             i, j, k = wp.tid()
 
-            ## Check if inside domain
-            #id_0_0_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k)
-            #id_1_0_0 = periodic_indexing(id_field.data, id_field.shape, 0, i + 1, j, k)
-            #id_0_1_0 = periodic_indexing(id_field.data, id_field.shape, 0, i, j + 1, k)
-            #id_0_0_1 = periodic_indexing(id_field.data, id_field.shape, 0, i, j, k + 1)
-            #if (id_0_0_0 != wp.uint8(0)) and (id_1_0_0 != wp.uint8(0)) and (id_0_1_0 != wp.uint8(0)) and (id_0_0_1 != wp.uint8(0)):
-            #    return
+            # Get index for id field
+            id_field_i = i + density.offset[0] - id_field.offset[0]
+            id_field_j = j + density.offset[1] - id_field.offset[1]
+            id_field_k = k + density.offset[2] - id_field.offset[2]
+
+            # Check if inside domain
+            id_0_0_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, id_field_i, id_field_j, id_field_k)
+            id_1_0_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, id_field_i + 1, id_field_j, id_field_k)
+            id_0_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, id_field_i, id_field_j + 1, id_field_k)
+            id_0_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, id_field_i, id_field_j, id_field_k + 1)
+            if (id_0_0_0 != fluid_id) and (id_1_0_0 != fluid_id) and (id_0_1_0 != fluid_id) and (id_0_0_1 != fluid_id):
+                return
 
             # Make p4 stencil
             rho_p4_stencil = p4_float32_stencil_type()
@@ -579,7 +602,7 @@ class EulerUpdate(Operator):
                     pressure.data, density.shape, 0, i + i_offset, j + j_offset, k + k_offset
                 )
                 id_p7_stencil = get_p7_uint8_stencil(
-                    id_field.data, density.shape, 0, i + i_offset, j + j_offset, k + k_offset
+                    id_field.data, id_field.shape, 0, id_field_i + i_offset, id_field_j + j_offset, id_field_k + k_offset
                 )
 
                 # Apply boundary conditions

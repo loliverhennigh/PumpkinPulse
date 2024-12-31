@@ -6,10 +6,10 @@ import copy
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.geometry.capacitor.capacitor import Capacitor
-from dense_plasma_focus.geometry.resistor.resistor import Resistor
-from dense_plasma_focus.geometry.cable.cable import Cable
-from dense_plasma_focus.material import Material, QUARTZ, COPPER, VACUUM
+from pumpkin_pulse.geometry.capacitor.capacitor import Capacitor
+from pumpkin_pulse.geometry.resistor.resistor import Resistor
+from pumpkin_pulse.geometry.cable.cable import Cable
+from pumpkin_pulse.material import Material, QUARTZ, COPPER, VACUUM
 
 
 class CapacitorDischarge(Compound):

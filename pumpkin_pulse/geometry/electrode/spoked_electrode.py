@@ -5,7 +5,7 @@ from typing import Literal, Union
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.geometry.electrode.electrode import Electrode
+from pumpkin_pulse.geometry.electrode.electrode import Electrode
 
 
 class SpokedElectrode(Electrode):

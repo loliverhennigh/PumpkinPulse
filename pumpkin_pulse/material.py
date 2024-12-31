@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from build123d import Part, Compound
 from anytree.search import findall
+from typing import Union
 
 
 # Material class
@@ -12,6 +13,7 @@ class Material:
     mu: float = 4.0 * 3.14159e-7  # H/m
     sigma_e: float = 0.0  # S/m
     sigma_m: float = 0.0  # S/m
+    initial_e : Union[float, None] = None
 
     @property
     def is_conductive(self):

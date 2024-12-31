@@ -45,8 +45,18 @@ class AddEMSourceTerms(Operator):
         # Get index
         i, j, k = wp.tid()
 
+        # Get em index
+        em_i = i + density.offset[0] - electric_field.offset[0]
+        em_j = j + density.offset[1] - electric_field.offset[1]
+        em_k = k + density.offset[2] - electric_field.offset[2]
+
+        # Get id index
+        id_i = i + density.offset[0] - id_field.offset[0]
+        id_j = j + density.offset[1] - id_field.offset[1]
+        id_k = k + density.offset[2] - id_field.offset[2]
+
         # Check if cell is fluid
-        if id_field.data[0, i, j, k] != wp.uint8(0):
+        if id_field.data[0, id_i, id_j, id_k] != wp.uint8(0):
             return
 
         # Get volume
@@ -61,24 +71,24 @@ class AddEMSourceTerms(Operator):
         )
 
         # Get electric and magnetic fields
-        ex_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, i, j, k)
-        ex_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, i, j + 1, k)
-        ex_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 0, i, j, k + 1)
-        ex_0_1_1 = periodic_indexing(electric_field.data, electric_field.shape, 0, i, j + 1, k + 1)
-        ey_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, i, j, k)
-        ey_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, i + 1, j, k)
-        ey_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 1, i, j, k + 1)
-        ey_1_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 1, i + 1, j, k + 1)
-        ez_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i, j, k)
-        ez_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i + 1, j, k)
-        ez_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i, j + 1, k)
-        ez_1_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i + 1, j + 1, k)
-        hx_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i, j, k)
-        hx_1_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i + 1, j, k)
-        hy_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i, j, k)
-        hy_0_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i, j + 1, k)
-        hz_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j, k)
-        hz_0_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i, j, k + 1)
+        ex_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, em_i, em_j, em_k)
+        ex_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, em_i, em_j + 1, em_k)
+        ex_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 0, em_i, em_j, em_k + 1)
+        ex_0_1_1 = periodic_indexing(electric_field.data, electric_field.shape, 0, em_i, em_j + 1, em_k + 1)
+        ey_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, em_i, em_j, em_k)
+        ey_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, em_i + 1, em_j, em_k)
+        ey_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 1, em_i, em_j, em_k + 1)
+        ey_1_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 1, em_i + 1, em_j, em_k + 1)
+        ez_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, em_i, em_j, em_k)
+        ez_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, em_i + 1, em_j, em_k)
+        ez_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, em_i, em_j + 1, em_k)
+        ez_1_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, em_i + 1, em_j + 1, em_k)
+        hx_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, em_i, em_j, em_k)
+        hx_1_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, em_i + 1, em_j, em_k)
+        hy_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, em_i, em_j, em_k)
+        hy_0_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, em_i, em_j + 1, em_k)
+        hz_0_0_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, em_i, em_j, em_k)
+        hz_0_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, em_i, em_j, em_k + 1)
 
         # Get cell centered averages
         e = wp.vec3f(

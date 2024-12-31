@@ -255,7 +255,7 @@ class GetTimeStep(Operator):
 
 eos_type = wp.vec(5, wp.float32)
 eos_dxyz_type = wp.mat((5, 3), wp.float32)
-class TwoKernelEulerUpdate(Operator):
+class KernelEulerUpdate(Operator):
     """
     Update conservative variables using Euler's equations
     """

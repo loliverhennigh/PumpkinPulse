@@ -6,7 +6,7 @@ import numpy as np
 from build123d import *
 from build123d import tuplify
 
-from dense_plasma_focus.material import Material, QUARTZ, COPPER
+from pumpkin_pulse.material import Material, QUARTZ, COPPER
 
 
 class Resistor(Compound):
@@ -19,13 +19,12 @@ class Resistor(Compound):
         diameter: float,
         insulator_thickness: float,
         length: float,
-        resistance: float,
+        conductivity: float,
         resistive_material_name: str = "resistor",
         color: str = "green",
         insulator_material: Material = QUARTZ,
     ):
         # Make resistive material
-        conductivity = length / (resistance * np.pi * (diameter / 2) ** 2)
         resistive_material = Material(
             name=resistive_material_name,
             color="green",

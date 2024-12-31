@@ -109,7 +109,7 @@ class InitializePML(Operator):
         direction: wp.vec3f,
         thickness: int,
         courant_number: float,
-        k=2.0,
+        k=1.0,
         a=1.0e-3,
     ):
 

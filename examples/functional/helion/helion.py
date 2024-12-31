@@ -1,4 +1,4 @@
-# Chamber
+# Helion fusion reactor simulation
 
 import os
 import numpy as np
@@ -7,35 +7,97 @@ import matplotlib.pyplot as plt
 import dataclasses
 import itertools
 from tqdm import tqdm
+from typing import List
 
 wp.init()
-#wp.clear_kernel_cache()
 
 from pumpkin_pulse.constructor import Constructor
 from pumpkin_pulse.data import Fielduint8, Fieldfloat32
 from pumpkin_pulse.operator import Operator
-from pumpkin_pulse.operator.voxelize import (
-    Tube,
+from pumpkin_pulse.operator.hydro import (
+    PrimitiveToConservative,
+    ConservativeToPrimitive,
+    GetTimeStep,
+    EulerUpdate,
+)
+from pumpkin_pulse.operator.mhd import (
+    AddEMSourceTerms,
+    GetCurrentDensity,
+)
+from pumpkin_pulse.operator.electromagnetism import (
+    YeeElectricFieldUpdate,
+    YeeMagneticFieldUpdate,
+    InitializePML,
+    PMLElectricFieldUpdate,
+    PMLMagneticFieldUpdate,
+    PMLPhiEUpdate,
+    PMLPhiHUpdate,
+)
+from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_setting
+from pumpkin_pulse.functional.stencil import (
+    p7_float32_stencil_type,
+    p7_uint8_stencil_type,
+    p4_float32_stencil_type,
+    p4_uint8_stencil_type,
+    faces_float32_type,
 )
 from pumpkin_pulse.operator.saver import FieldSaver
 
-from geometry.chamber import HelionChamber
-from geometry.circuit import CapacitorCircuit
-#from geometry.circuit import test
+from geometry.reactor import Reactor
+from utils import (
+    capacitance_to_eps,
+    switch_sigma_e,
+    RampElectricField,
+    MaterialIDMappings,
+    PlasmaInitializer,
+    update_em_field,
+    apply_boundary_conditions_p7,
+    apply_boundary_conditions_faces,
+)
 
 
 if __name__ == "__main__":
 
     # Define simulation parameters
-    dx = 0.0005 # 1 mm
-    origin = (-0.55, -0.085, -0.085) # meters
+    dx = 0.002 # 1 mm
+    origin = (-0.70, -0.24, -0.12) # meters
     spacing = (dx, dx, dx)
-    shape = (int(1.1 / dx), int(0.17 / dx), int(0.17 / dx))
+    shape = (int(1.4 / dx), int(0.48 / dx), int(0.24 / dx))
     nr_cells = shape[0] * shape[1] * shape[2]
     print(f"Number of million cells: {nr_cells / 1e6}")
 
+    # IO parameters
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Constants
+    vacuum_permittivity = 8.854187817e-12
+    vacuum_permeability = 1.2566370614e-6
+    vacuum_c = float(1.0 / np.sqrt(vacuum_permittivity * vacuum_permeability))
+    copper_conductivity = 5.96e7
+    insulator_permittivity = 3.45 * vacuum_permittivity
+    elementary_charge = 1.60217662e-19
+    electron_mass = 9.10938356e-31
+    proton_mass = 1.6726219e-27
+    boltzmann_constant = 1.38064852e-23
+    gamma = (5.0 / 3.0)
+
+    # Plasma parameters
+    initial_number_density = 1.0e19 # m^-3
+    initial_temperature = 1.0e5 # K
+    initial_pressure = initial_number_density * boltzmann_constant * initial_temperature
+
+    # Material parameters
+    eps_mapping = {}
+    mu_mapping = {}
+    sigma_e_mapping = {}
+    sigma_h_mapping = {}
+    initial_e_mapping = {}
+
     # Chamber parameters
-    chamber_wall_thickness = 0.005
+    # Geometry
+    chamber_wall_thickness = 0.020
     interaction_radius = 0.01
     interaction_bounds = 0.1
     acceleration_bounds = 0.3
@@ -45,78 +107,205 @@ if __name__ == "__main__":
     diverter_inlet_bounds = 0.45
     diverter_radius = 0.025
     diverter_bounds = 0.5
+    background_id = 1
     vacuum_id = 0
-    chamber_id = 1
+    chamber_id = 2
+    # Material
+    eps_mapping[background_id] = vacuum_permittivity
+    mu_mapping[background_id] = vacuum_permeability
+    sigma_e_mapping[background_id] = 0
+    sigma_h_mapping[background_id] = 0
+    eps_mapping[vacuum_id] = vacuum_permittivity
+    mu_mapping[vacuum_id] = vacuum_permeability
+    sigma_e_mapping[vacuum_id] = 0
+    sigma_h_mapping[vacuum_id] = 0
+    eps_mapping[chamber_id] = 1.0 * vacuum_permittivity
+    mu_mapping[chamber_id] = vacuum_permeability
+    sigma_e_mapping[chamber_id] = 0
+    sigma_h_mapping[chamber_id] = 0
 
     # Global Coil parameters
-    insulator_thickness = 0.001
-    dielectric_thickness = 0.002
+    # Geometry
+    insulator_thickness = 0.002
+    dielectric_thickness = 0.040
+    insulator_id = 3
+    conductor_id = 4
+    # Material
+    eps_mapping[insulator_id] = insulator_permittivity
+    mu_mapping[insulator_id] = vacuum_permeability
+    sigma_e_mapping[insulator_id] = 0
+    sigma_h_mapping[insulator_id] = 0
+    eps_mapping[conductor_id] = vacuum_permittivity
+    mu_mapping[conductor_id] = vacuum_permeability
+    sigma_e_mapping[conductor_id] = copper_conductivity
+    sigma_h_mapping[conductor_id] = 0
 
     # Interaction Coil parameters
-    nr_interaction_coils = 8
-    interaction_coil_radius = interaction_radius + chamber_wall_thickness
-    interaction_cable_thickness_r = 0.005
-    interaction_cable_thickness_y = 0.004
-    interaction_positions = np.linspace(-interaction_bounds, interaction_bounds, nr_interaction_coils)
-    interaction_conductor_id = 2
-    interaction_insulator_id = 3
-    interaction_dielectric_id = 4
-    interaction_switch_id = 5
-    interaction_resistor_id = 6
+    # Geometry
+    nr_interaction_coils = 16
+    interaction_cable_thickness_r = 0.020
+    interaction_cable_thickness_y = 0.012
+    interaction_dielectric_id = 5
+    interaction_switch_id = [6, 7, 8, 9, 10, 11, 12, 13]
+    interaction_resistor_id = 14
+    # Material
+    interaction_voltage = 1000 # V
+    interaction_capacitance = 1.0 # F
+    interation_switch_start_time = 1.0e-6 # s
+    interaction_switch_time = 1e-7 # s
+    interaction_switch_end_time = 1.5e-6 # s
+    initial_e_mapping[interaction_dielectric_id] = interaction_voltage / dielectric_thickness
+    eps_mapping[interaction_dielectric_id] = capacitance_to_eps(
+        capacitance=interaction_capacitance,
+        surface_area=interaction_cable_thickness_r * interaction_cable_thickness_y,
+        thickness=dielectric_thickness,
+    )
+    mu_mapping[interaction_dielectric_id] = vacuum_permeability
+    sigma_e_mapping[interaction_dielectric_id] = 0
+    sigma_h_mapping[interaction_dielectric_id] = 0
+    for switch_id in interaction_switch_id:
+        eps_mapping[switch_id] = vacuum_permittivity
+        mu_mapping[switch_id] = vacuum_permeability
+        sigma_e_mapping[switch_id] = switch_sigma_e(
+            switch_sigma_e=copper_conductivity,
+            switch_start_time=interation_switch_start_time,
+            switch_time=interaction_switch_time,
+            switch_end_time=interaction_switch_end_time,
+        )
+        sigma_h_mapping[switch_id] = 0
+    eps_mapping[interaction_resistor_id] = vacuum_permittivity
+    mu_mapping[interaction_resistor_id] = vacuum_permeability
+    sigma_e_mapping[interaction_resistor_id] = copper_conductivity
+    sigma_h_mapping[interaction_resistor_id] = 0
 
     # Acceleration Coil parameters
-    nr_acceleration_coils = 4
-    accelerator_coil_posistions = np.linspace(
-        interaction_bounds,
-        acceleration_bounds,
-        nr_acceleration_coils + 1,
-        endpoint=False,
-    )[1:]
-    accelerator_coil_radius_slope = (formation_radius - interaction_radius) / (acceleration_bounds - interaction_bounds)
-    accelerator_coil_radius = (
-        interaction_radius
-        + chamber_wall_thickness
-        + accelerator_coil_radius_slope * (accelerator_coil_posistions - interaction_bounds)
+    # Geometry
+    nr_acceleration_coils = 8
+    accelerator_cable_thickness_r = 0.020
+    accelerator_cable_thickness_y = 0.012
+    accelerator_dielectric_id = 15  
+    accelerator_switch_id = [16, 17, 18, 19]
+    accelerator_resistor_id = 20
+    # Material
+    accelerator_voltage = 1000 # V
+    accelerator_capacitance = 1.0 # F
+    accelerator_switch_start_time = 5.0e-7 # s
+    accelerator_switch_time = 1e-7 # s
+    accelerator_switch_end_time = 1.0e-6 # s
+    initial_e_mapping[accelerator_dielectric_id] = accelerator_voltage / dielectric_thickness
+    eps_mapping[accelerator_dielectric_id] = capacitance_to_eps(
+        capacitance=accelerator_capacitance,
+        surface_area=accelerator_cable_thickness_r * accelerator_cable_thickness_y,
+        thickness=dielectric_thickness,
     )
-    accelerator_cable_thickness_r = 0.005
-    accelerator_cable_thickness_y = 0.004
-    accelerator_conductor_id = 7
-    accelerator_insulator_id = 8
-    accelerator_dielectric_id = 9
-    accelerator_switch_id = 10
-    accelerator_resistor_id = 11
+    mu_mapping[accelerator_dielectric_id] = vacuum_permeability
+    sigma_e_mapping[accelerator_dielectric_id] = 0
+    sigma_h_mapping[accelerator_dielectric_id] = 0
+    for switch_id in accelerator_switch_id:
+        eps_mapping[switch_id] = vacuum_permittivity
+        mu_mapping[switch_id] = vacuum_permeability
+        sigma_e_mapping[switch_id] = switch_sigma_e(
+            switch_sigma_e=copper_conductivity,
+            switch_start_time=accelerator_switch_start_time,
+            switch_time=accelerator_switch_time,
+            switch_end_time=accelerator_switch_end_time,
+        )
+        sigma_h_mapping[switch_id] = 0
+    eps_mapping[accelerator_resistor_id] = vacuum_permittivity
+    mu_mapping[accelerator_resistor_id] = vacuum_permeability
+    sigma_e_mapping[accelerator_resistor_id] = copper_conductivity
+    sigma_h_mapping[accelerator_resistor_id] = 0
 
     # Formation Coil parameters
-    nr_formation_coils = 4
-    formation_coil_radius = formation_radius + chamber_wall_thickness
-    formation_cable_thickness_r = 0.005
-    formation_cable_thickness_y = 0.004
-    formation_positions = np.linspace(
-        acceleration_bounds,
-        formation_bounds,
-        nr_formation_coils
+    # Geometry
+    nr_formation_coils = 8
+    formation_cable_thickness_r = 0.020
+    formation_cable_thickness_y = 0.012
+    formation_dielectric_id = 21
+    formation_switch_id = [22, 23, 24, 25]
+    formation_resistor_id = 26
+    # Material
+    formation_voltage = 1000 # V
+    formation_capacitance = 1.0 # F
+    formation_switch_start_time = 0.0 # s
+    formation_switch_time = 1.0e-7 # s
+    formation_switch_end_time = 5.0e-7 # s
+    initial_e_mapping[formation_dielectric_id] = formation_voltage / dielectric_thickness
+    eps_mapping[formation_dielectric_id] = capacitance_to_eps(
+        capacitance=formation_capacitance,
+        surface_area=formation_cable_thickness_r * formation_cable_thickness_y,
+        thickness=dielectric_thickness,
     )
-    formation_conductor_id = 12
-    formation_insulator_id = 13
-    formation_dielectric_id = 14
-    formation_switch_id = 15
-    formation_resistor_id = 16
+    mu_mapping[formation_dielectric_id] = vacuum_permeability
+    sigma_e_mapping[formation_dielectric_id] = 0
+    sigma_h_mapping[formation_dielectric_id] = 0
+    for switch_id in formation_switch_id:
+        eps_mapping[switch_id] = vacuum_permittivity
+        mu_mapping[switch_id] = vacuum_permeability
+        sigma_e_mapping[switch_id] = switch_sigma_e(
+            switch_sigma_e=copper_conductivity,
+            switch_start_time=formation_switch_start_time,
+            switch_time=formation_switch_time,
+            switch_end_time=formation_switch_end_time,
+        )
+        sigma_h_mapping[switch_id] = 0
+    eps_mapping[formation_resistor_id] = vacuum_permittivity
+    mu_mapping[formation_resistor_id] = vacuum_permeability
+    sigma_e_mapping[formation_resistor_id] = copper_conductivity
+    sigma_h_mapping[formation_resistor_id] = 0
 
     # Inlet Diverter Coil parameters
+    # Geometry
     nr_diverter_inlet_coils = 2
-    diverter_inlet_coil_radius = diverter_inlet_radius + chamber_wall_thickness
-    diverter_inlet_cable_thickness_r = 0.005
+    diverter_inlet_cable_thickness_r = 0.012
     diverter_inlet_cable_thickness_y = 0.004
-    diverter_inlet_positions = np.linspace(
-        formation_bounds + chamber_wall_thickness + 0.5 * diverter_inlet_cable_thickness_y,
-        diverter_inlet_bounds - chamber_wall_thickness - 0.5 * diverter_inlet_cable_thickness_y,
-        nr_diverter_inlet_coils
+    diverter_inlet_dielectric_id = 27
+    diverter_inlet_switch_id = [28, 29]
+    diverter_inlet_resistor_id = 30
+    # Material
+    diverter_inlet_voltage = 1 # V
+    diverter_inlet_capacitance = 1.0 # F
+    diverter_inlet_switch_start_time = 2.0e-7 # s
+    diverter_inlet_switch_time = 1.0e-7 # s
+    diverter_inlet_switch_end_time = 1.0e-6 # s
+    initial_e_mapping[diverter_inlet_dielectric_id] = diverter_inlet_voltage / dielectric_thickness
+    eps_mapping[diverter_inlet_dielectric_id] = capacitance_to_eps(
+        capacitance=diverter_inlet_capacitance,
+        surface_area=diverter_inlet_cable_thickness_r * diverter_inlet_cable_thickness_y,
+        thickness=dielectric_thickness,
     )
-    diverter_inlet_conductor_id = 17
-    diverter_inlet_insulator_id = 18
-    diverter_inlet_dielectric_id = 19
-    diverter_inlet_switch_id = 20
-    diverter_inlet_resistor_id = 21
+    mu_mapping[diverter_inlet_dielectric_id] = vacuum_permeability
+    sigma_e_mapping[diverter_inlet_dielectric_id] = 0
+    sigma_h_mapping[diverter_inlet_dielectric_id] = 0
+    for switch_id in diverter_inlet_switch_id:
+        eps_mapping[switch_id] = vacuum_permittivity
+        mu_mapping[switch_id] = vacuum_permeability
+        sigma_e_mapping[switch_id] = switch_sigma_e(
+            switch_sigma_e=copper_conductivity,
+            switch_start_time=diverter_inlet_switch_start_time,
+            switch_time=diverter_inlet_switch_time,
+            switch_end_time=diverter_inlet_switch_end_time,
+        )
+        sigma_h_mapping[switch_id] = 0
+    eps_mapping[diverter_inlet_resistor_id] = vacuum_permittivity
+    mu_mapping[diverter_inlet_resistor_id] = vacuum_permeability
+    sigma_e_mapping[diverter_inlet_resistor_id] = copper_conductivity
+    sigma_h_mapping[diverter_inlet_resistor_id] = 0
+
+    # PML parameters
+    pml_width = 10
+
+    # Use CFL condition to determine time step
+    courant_number = 1.0 / np.sqrt(2.0) * 1.0
+    ramp_dt = 0.1 * courant_number * (dx / vacuum_c)
+    dt = 0.5 * courant_number * (dx / vacuum_c)
+
+    # Time parameters
+    ramp_time = 2e-9  # 10 nanoseconds
+    relaxation_time = 1.0e-8  # 10 nanoseconds
+    simulation_time = 2e-6  # 1 microsecond
+    save_interval = 1e-8  # 10 nanoseconds
+    save_frequency = int(save_interval / dt)
 
     # Make the field saver
     field_saver = FieldSaver()
@@ -128,14 +317,158 @@ if __name__ == "__main__":
         spacing=spacing,
     )
 
-    # Make the fields
+    # Make the id field
     id_field = constructor.create_field(
         dtype=wp.uint8,
         cardinality=1,
     )
 
-    # Make the Helion chamber operator
-    helion_chamber_operator = HelionChamber(
+    # Make EM fields
+    electric_field = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+    )
+    magnetic_field = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+    )
+    pml_layer_lower_x = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(0, 0, 0),
+        shape=(pml_width, shape[1], shape[2]),
+    )
+    pml_layer_upper_x = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(shape[0] - pml_width, 0, 0),
+        shape=(pml_width, shape[1], shape[2]),
+    )
+    pml_layer_lower_y = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(0, 0, 0),
+        shape=(shape[0], pml_width, shape[2]),
+    )
+    pml_layer_upper_y = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(0, shape[1] - pml_width, 0),
+        shape=(shape[0], pml_width, shape[2]),
+    )
+    pml_layer_lower_z = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(0, 0, 0),
+        shape=(shape[0], shape[1], pml_width),
+    )
+    pml_layer_upper_z = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=36,
+        offset=(0, 0, shape[2] - pml_width),
+        shape=(shape[0], shape[1], pml_width),
+    )
+    pml_layers = [
+        pml_layer_lower_x,
+        pml_layer_upper_x,
+        pml_layer_lower_y,
+        pml_layer_upper_y,
+        pml_layer_lower_z,
+        pml_layer_upper_z,
+    ]
+
+    # Make hydro fields
+    hydro_offset = (
+        int(((-diverter_bounds - chamber_wall_thickness) - origin[0]) / spacing[0]),
+        int(((-formation_radius - chamber_wall_thickness) - origin[1]) / spacing[1]),
+        int(((-formation_radius - chamber_wall_thickness) - origin[2]) / spacing[2]),
+    )
+    hydro_shape = (
+        int((2 * (diverter_bounds + chamber_wall_thickness) / spacing[0]) + 0.5),
+        int((2 * (formation_radius + chamber_wall_thickness) / spacing[1]) + 0.5),
+        int((2 * (formation_radius + chamber_wall_thickness) / spacing[2]) + 0.5),
+    )
+    density_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    velocity_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    pressure_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    density_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    velocity_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    pressure_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    mass_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    momentum_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    energy_i = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    mass_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    momentum_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    energy_e = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=1,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+    impressed_current = constructor.create_field(
+        dtype=wp.float32,
+        cardinality=3,
+        offset=hydro_offset,
+        shape=hydro_shape,
+    )
+
+    # Make the reactor operator
+    reactor_operator = Reactor(
         chamber_wall_thickness=chamber_wall_thickness,
         interaction_radius=interaction_radius,
         interaction_bounds=interaction_bounds,
@@ -146,161 +479,407 @@ if __name__ == "__main__":
         diverter_inlet_bounds=diverter_inlet_bounds,
         diverter_radius=diverter_radius,
         diverter_bounds=diverter_bounds,
+        insulator_thickness=insulator_thickness,
+        dielectric_thickness=dielectric_thickness,
+        background_id=background_id,
         vacuum_id=vacuum_id,
         chamber_id=chamber_id,
+        conductor_id=conductor_id,
+        insulator_id=insulator_id,
+        nr_interaction_coils=nr_interaction_coils,
+        interaction_cable_thickness_r=interaction_cable_thickness_r,
+        interaction_cable_thickness_y=interaction_cable_thickness_y,
+        interaction_resistor_id=interaction_resistor_id,
+        interaction_switch_id=interaction_switch_id,
+        interaction_dielectric_id=interaction_dielectric_id,
+        nr_acceleration_coils=nr_acceleration_coils,
+        accelerator_cable_thickness_r=accelerator_cable_thickness_r,
+        accelerator_cable_thickness_y=accelerator_cable_thickness_y,
+        accelerator_resistor_id=accelerator_resistor_id,
+        accelerator_switch_id=accelerator_switch_id,
+        accelerator_dielectric_id=accelerator_dielectric_id,
+        nr_formation_coils=nr_formation_coils,
+        formation_cable_thickness_r=formation_cable_thickness_r,
+        formation_cable_thickness_y=formation_cable_thickness_y,
+        formation_resistor_id=formation_resistor_id,
+        formation_switch_id=formation_switch_id,
+        formation_dielectric_id=formation_dielectric_id,
+        nr_diverter_inlet_coils=nr_diverter_inlet_coils,
+        diverter_inlet_cable_thickness_r=diverter_inlet_cable_thickness_r,
+        diverter_inlet_cable_thickness_y=diverter_inlet_cable_thickness_y,
+        diverter_inlet_resistor_id=diverter_inlet_resistor_id,
+        diverter_inlet_switch_id=diverter_inlet_switch_id,
+        diverter_inlet_dielectric_id=diverter_inlet_dielectric_id,
     )
 
-    # Make interaction coils operators
-    interaction_coils_operators = []
-    for i in range(nr_interaction_coils):
-        interaction_coil_operator = CapacitorCircuit(
-            coil_radius=interaction_coil_radius,
-            cable_thickness_r=interaction_cable_thickness_r,
-            cable_thickness_y=interaction_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(interaction_positions[i], 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=interaction_conductor_id,
-            insulator_id=interaction_insulator_id,
-            dielectric_id=interaction_dielectric_id,
-            switch_id=interaction_switch_id,
-            resistor_id=interaction_resistor_id,
-        )
-        interaction_coils_operators.append(interaction_coil_operator)
+    # Make the material id mappings operator
+    material_id_mappings = MaterialIDMappings()
 
-    # Make acceleration coils operators
-    lx_acceleration_coils_operators = []
-    rx_acceleration_coils_operators = []
-    for i in range(nr_acceleration_coils):
-        lx_acceleration_coil_operator = CapacitorCircuit(
-            coil_radius=float(accelerator_coil_radius[i]),
-            cable_thickness_r=accelerator_cable_thickness_r,
-            cable_thickness_y=accelerator_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(-float(accelerator_coil_posistions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=accelerator_conductor_id,
-            insulator_id=accelerator_insulator_id,
-            dielectric_id=accelerator_dielectric_id,
-            switch_id=accelerator_switch_id,
-            resistor_id=accelerator_resistor_id,
-        )
-        rx_acceleration_coil_operator = CapacitorCircuit(
-            coil_radius=float(accelerator_coil_radius[i]),
-            cable_thickness_r=accelerator_cable_thickness_r,
-            cable_thickness_y=accelerator_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(float(accelerator_coil_posistions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=accelerator_conductor_id,
-            insulator_id=accelerator_insulator_id,
-            dielectric_id=accelerator_dielectric_id,
-            switch_id=accelerator_switch_id,
-            resistor_id=accelerator_resistor_id,
-        )
-        lx_acceleration_coils_operators.append(lx_acceleration_coil_operator)
-        rx_acceleration_coils_operators.append(rx_acceleration_coil_operator)
+    # Make the electromagnetism operators
+    e_field_update = YeeElectricFieldUpdate()
+    h_field_update = YeeMagneticFieldUpdate()
+    initialize_pml_layer = InitializePML()
+    pml_e_field_update = PMLElectricFieldUpdate()
+    pml_h_field_update = PMLMagneticFieldUpdate()
+    pml_phi_e_update = PMLPhiEUpdate()
+    pml_phi_h_update = PMLPhiHUpdate()
+    ramp_electric_field = RampElectricField()
 
-    # Make formation coils operators
-    lx_formation_coils_operators = []
-    rx_formation_coils_operators = []
-    for i in range(nr_formation_coils):
-        lx_formation_coil_operator = CapacitorCircuit(
-            coil_radius=formation_coil_radius,
-            cable_thickness_r=formation_cable_thickness_r,
-            cable_thickness_y=formation_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(float(formation_positions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=formation_conductor_id,
-            insulator_id=formation_insulator_id,
-            dielectric_id=formation_dielectric_id,
-            switch_id=formation_switch_id,
-            resistor_id=formation_resistor_id,
-        )
-        lx_formation_coils_operators.append(lx_formation_coil_operator)
-        rx_formation_coil_operator = CapacitorCircuit(
-            coil_radius=formation_coil_radius,
-            cable_thickness_r=formation_cable_thickness_r,
-            cable_thickness_y=formation_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(-float(formation_positions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=formation_conductor_id,
-            insulator_id=formation_insulator_id,
-            dielectric_id=formation_dielectric_id,
-            switch_id=formation_switch_id,
-            resistor_id=formation_resistor_id,
-        )
-        rx_formation_coils_operators.append(rx_formation_coil_operator)
+    # Make the hydro operators
+    primitive_to_conservative = PrimitiveToConservative()
+    conservative_to_primitive = ConservativeToPrimitive()
+    get_time_step = GetTimeStep()
+    euler_update = EulerUpdate(
+        apply_boundary_conditions_p7=apply_boundary_conditions_p7,
+        apply_boundary_conditions_faces=apply_boundary_conditions_faces,
+    )
+    add_em_source_terms = AddEMSourceTerms()
+    get_current_density = GetCurrentDensity()
+    plasma_initializer = PlasmaInitializer()
 
-    # Make diverter inlet coils operators
-    lx_diverter_inlet_coils_operators = []
-    rx_diverter_inlet_coils_operators = []
-    for i in range(nr_diverter_inlet_coils):
-        lx_diverter_inlet_coil_operator = CapacitorCircuit(
-            coil_radius=diverter_inlet_coil_radius,
-            cable_thickness_r=diverter_inlet_cable_thickness_r,
-            cable_thickness_y=diverter_inlet_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(float(diverter_inlet_positions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=diverter_inlet_conductor_id,
-            insulator_id=diverter_inlet_insulator_id,
-            dielectric_id=diverter_inlet_dielectric_id,
-            switch_id=diverter_inlet_switch_id,
-            resistor_id=diverter_inlet_resistor_id,
-        )
-        rx_diverter_inlet_coil_operator = CapacitorCircuit(
-            coil_radius=diverter_inlet_coil_radius,
-            cable_thickness_r=diverter_inlet_cable_thickness_r,
-            cable_thickness_y=diverter_inlet_cable_thickness_y,
-            insulator_thickness=insulator_thickness,
-            dielectric_thickness=dielectric_thickness,
-            center=(-float(diverter_inlet_positions[i]), 0.0, 0.0),
-            centeraxis=(0.0, 0.0, 1.0),
-            angle=np.pi / 2,
-            conductor_id=diverter_inlet_conductor_id,
-            insulator_id=diverter_inlet_insulator_id,
-            dielectric_id=diverter_inlet_dielectric_id,
-            switch_id=diverter_inlet_switch_id,
-            resistor_id=diverter_inlet_resistor_id,
-        )
-        lx_diverter_inlet_coils_operators.append(lx_diverter_inlet_coil_operator)
-        rx_diverter_inlet_coils_operators.append(rx_diverter_inlet_coil_operator)
+    # Initialize the PML layers
+    pml_layer_lower_x = initialize_pml_layer(
+        pml_layer_lower_x,
+        direction=wp.vec3f(1.0, 0.0, 0.0),
+        thickness=pml_width,
+        courant_number=courant_number,
+    )
+    pml_layer_upper_x = initialize_pml_layer(
+        pml_layer_upper_x,
+        direction=wp.vec3f(-1.0, 0.0, 0.0),
+        thickness=pml_width,
+        courant_number=courant_number,
+    )
+    pml_layer_lower_y = initialize_pml_layer(
+        pml_layer_lower_y,
+        direction=wp.vec3f(0.0, 1.0, 0.0),
+        thickness=pml_width,
+        courant_number=courant_number,
+    )
+    pml_layer_upper_y = initialize_pml_layer(
+        pml_layer_upper_y,
+        direction=wp.vec3f(0.0, -1.0, 0.0),
+        thickness=pml_width,
+        courant_number=courant_number,
+    )
+    pml_layer_lower_z = initialize_pml_layer(
+        pml_layer_lower_z,
+        direction=wp.vec3f(0.0, 0.0, 1.0),
+        thickness=pml_width,
+        courant_number=courant_number,
+    )
+    pml_layer_upper_z = initialize_pml_layer(
+        pml_layer_upper_z,
+        direction=wp.vec3f(0.0, 0.0, -1.0),
+        thickness=pml_width,
+        courant_number=courant_number
+    )
 
- 
-    # Run the geometry operators
-    id_field = helion_chamber_operator(id_field)
-    for interaction_coil_operator in interaction_coils_operators:
-        id_field = interaction_coil_operator(id_field)
-    for lx_acceleration_coil_operator in lx_acceleration_coils_operators:
-        id_field = lx_acceleration_coil_operator(id_field)
-    for rx_acceleration_coil_operator in rx_acceleration_coils_operators:
-        id_field = rx_acceleration_coil_operator(id_field)
-    for lx_formation_coil_operator in lx_formation_coils_operators:
-        id_field = lx_formation_coil_operator(id_field)
-    for rx_formation_coil_operator in rx_formation_coils_operators:
-        id_field = rx_formation_coil_operator(id_field)
-    for lx_diverter_inlet_coil_operator in lx_diverter_inlet_coils_operators:
-        id_field = lx_diverter_inlet_coil_operator(id_field)
-    for rx_diverter_inlet_coil_operator in rx_diverter_inlet_coils_operators:
-        id_field = rx_diverter_inlet_coil_operator(id_field)
+    # Run the reactor to initialize the id field
+    id_field = reactor_operator(id_field)
+    field_saver(
+        {
+            "id_field": id_field,
+        },
+        f"{output_dir}/id_field.vtk",
+    )
+
+    # Get material id mappings
+    wp_eps_mapping, wp_mu_mapping, wp_sigma_e_mapping, wp_sigma_h_mapping = material_id_mappings(
+        eps_mapping,
+        mu_mapping,
+        sigma_e_mapping,
+        sigma_h_mapping,
+        0.0,
+    )
+
+    # Initialize the plasma
+    density_i, velocity_i, pressure_i, density_e, velocity_e, pressure_e = plasma_initializer(
+        density_i,
+        velocity_i,
+        pressure_i,
+        density_e,
+        velocity_e,
+        pressure_e,
+        id_field,
+        proton_mass,
+        electron_mass,
+        initial_number_density,
+        initial_pressure,
+    )
+    mass_i, momentum_i, energy_i = primitive_to_conservative(
+        density_i,
+        velocity_i,
+        pressure_i,
+        mass_i,
+        momentum_i,
+        energy_i,
+        gamma
+    )
+    mass_e, momentum_e, energy_e = primitive_to_conservative(
+        density_e,
+        velocity_e,
+        pressure_e,
+        mass_e,
+        momentum_e,
+        energy_e,
+        gamma
+    )
+    field_saver(
+        {
+            "density_i": density_i,
+            "velocity_i": velocity_i,
+            "pressure_i": pressure_i,
+            "density_e": density_e,
+            "velocity_e": velocity_e,
+            "pressure_e": pressure_e,
+            "mass_i": mass_i,
+            "momentum_i": momentum_i,
+            "energy_i": energy_i,
+            "mass_e": mass_e,
+            "momentum_e": momentum_e,
+            "energy_e": energy_e,
+        },
+        f"{output_dir}/initial_plasma_hydro_fields.vtk",
+    )
+
+    # Run once to get the initial fields
+    with wp.ScopedCapture() as capture:
+        update_em_field(
+            electric_field,
+            magnetic_field,
+            impressed_current,
+            id_field,
+            pml_layers,
+            wp_eps_mapping,
+            wp_mu_mapping,
+            wp_sigma_e_mapping,
+            wp_sigma_h_mapping,
+            dt,
+            pml_phi_e_update, 
+            pml_phi_h_update,
+            pml_e_field_update,
+            pml_h_field_update,
+            e_field_update,
+            h_field_update,
+        )
+
+    # Begin field rampup
+    print("Beginning relaxation")
+    for i in tqdm(range(int(ramp_time / ramp_dt))):
+
+        # Ramp the electric field
+        for e_id, e_strength in initial_e_mapping.items():
+            electric_field = ramp_electric_field(
+                electric_field,
+                id_field,
+                id_value=e_id,
+                value=e_strength,
+                direction=2,
+            )
+
+        # Call graph
+        wp.capture_launch(capture.graph)
+
+        # Check if nan
+        if i % 100 == 0:
+            if np.isnan(np.sum(electric_field.data.numpy())):
+                print("Electric field is NaN")
+                exit()
 
     # Save the fields
     field_saver(
-        {"id_field": id_field},
-        "id_field.vtk",
+        {
+            "electric_field": electric_field,
+            "magnetic_field": magnetic_field,
+        },
+        f"{output_dir}/ramped_em_field.vtk",
     )
+
+    # Begin relaxation
+    print("Beginning relaxation")
+    for i in tqdm(range(int(relaxation_time / dt))):
+
+        # Ramp the electric field
+        for e_id, e_strength in initial_e_mapping.items():
+            electric_field = ramp_electric_field(
+                electric_field,
+                id_field,
+                id_value=e_id,
+                value=e_strength,
+                direction=2,
+            )
+
+        # Call graph
+        wp.capture_launch(capture.graph)
+
+    # Save the fields
+    field_saver(
+        {
+            "electric_field": electric_field,
+            "magnetic_field": magnetic_field,
+        },
+        f"{output_dir}/relaxed_em_field.vtk",
+    )
+
+    # Begin simulation
+    print("Beginning simulation")
+    for i in tqdm(range(int(simulation_time / dt))):
+
+        # Get primitive variables
+        density_i, velocity_i, pressure_i = conservative_to_primitive(
+            density_i,
+            velocity_i,
+            pressure_i,
+            mass_i,
+            momentum_i,
+            energy_i,
+            gamma
+        )
+        density_e, velocity_e, pressure_e = conservative_to_primitive(
+            density_e,
+            velocity_e,
+            pressure_e,
+            mass_e,
+            momentum_e,
+            energy_e,
+            gamma
+        )
+
+        # Get impressed current
+        impressed_current.data.zero_()
+        impressed_current = get_current_density(
+            density_i,
+            velocity_i,
+            pressure_i,
+            impressed_current,
+            id_field,
+            proton_mass,
+            elementary_charge,
+        )
+        impressed_current = get_current_density(
+            density_e,
+            velocity_e,
+            pressure_e,
+            impressed_current,
+            id_field,
+            electron_mass,
+            -elementary_charge,
+        )
+
+        # Update Conserved Variables
+        mass_i, momentum_i, energy_i = euler_update(
+            density_i,
+            velocity_i,
+            pressure_i,
+            mass_i,
+            momentum_i,
+            energy_i,
+            id_field,
+            gamma,
+            dt,
+        )
+        mass_e, momentum_e, energy_e = euler_update(
+            density_e,
+            velocity_e,
+            pressure_e,
+            mass_e,
+            momentum_e,
+            energy_e,
+            id_field,
+            gamma,
+            dt,
+        )
+
+        # Get material id mappings
+        wp_eps_mapping, wp_mu_mapping, wp_sigma_e_mapping, wp_sigma_h_mapping = material_id_mappings(
+            eps_mapping,
+            mu_mapping,
+            sigma_e_mapping,
+            sigma_h_mapping,
+            i * dt,
+        )
+
+        # Call the update function
+        update_em_field(
+            electric_field,
+            magnetic_field,
+            impressed_current,
+            id_field,
+            pml_layers,
+            wp_eps_mapping,
+            wp_mu_mapping,
+            wp_sigma_e_mapping,
+            wp_sigma_h_mapping,
+            dt,
+            pml_phi_e_update, 
+            pml_phi_h_update,
+            pml_e_field_update,
+            pml_h_field_update,
+            e_field_update,
+            h_field_update,
+        )
+        
+        # Add EM Source Terms
+        mass_i, momentum_i, energy_i = add_em_source_terms(
+            density_i,
+            velocity_i,
+            pressure_i,
+            electric_field,
+            magnetic_field,
+            mass_i,
+            momentum_i,
+            energy_i,
+            id_field,
+            proton_mass,
+            elementary_charge,
+            vacuum_permeability,
+            dt,
+        )
+        mass_e, momentum_e, energy_e = add_em_source_terms(
+            density_e,
+            velocity_e,
+            pressure_e,
+            electric_field,
+            magnetic_field,
+            mass_e,
+            momentum_e,
+            energy_e,
+            id_field,
+            electron_mass,
+            -elementary_charge,
+            vacuum_permeability,
+            dt,
+        )
+
+        # Save the fields
+        if i % save_frequency == 0:
+
+            # Save the fields
+            print(f"Saving fields at time {i * dt}")
+            field_saver(
+                {
+                    "id_field": id_field,
+                    "electric_field": electric_field,
+                    "magnetic_field": magnetic_field,
+                },
+                f"{output_dir}/simulation_em_field_{str(i).zfill(10)}.vtk",
+            )
+            field_saver(
+                {
+                    "density_i": density_i,
+                    "velocity_i": velocity_i,
+                    "pressure_i": pressure_i,
+                    "mass_i": mass_i,
+                    "momentum_i": momentum_i,
+                    "energy_i": energy_i,
+                    "density_e": density_e,
+                    "velocity_e": velocity_e,
+                    "pressure_e": pressure_e,
+                    "mass_e": mass_e,
+                    "momentum_e": momentum_e,
+                    "energy_e": energy_e,
+                    "impressed_current": impressed_current,
+                },
+                f"{output_dir}/simulation_hydro_field_{str(i).zfill(10)}.vtk",
+            )
