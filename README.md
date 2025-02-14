@@ -1,7 +1,7 @@
 # 🎃 Pumpkin Pulse 🎃
 
 <div align="center">
-  <img src="https://github.com/loliverhennigh/PumpkinPulse/assets/cover_image.png">
+  <img src="https://github.com/loliverhennigh/PumpkinPulse/blob/dev/assets/cover_image.png">
   <p><strong>🎃 Pumpkin Pulse 🎃</strong></p>
 
 # Gallery
