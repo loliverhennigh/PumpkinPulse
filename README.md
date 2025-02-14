@@ -1,5 +1,10 @@
 # 🎃 Pumpkin Pulse 🎃
 
+<div align="center">
+  <img src="https://github.com/loliverhennigh/PumpkinPulse/blob/dev/assets/cover_image.png">
+  <p><strong>🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃</strong></p>
+</div>
+
 Pumpkin Pulse is a python package for scalable GPU accelerated simulations of plasma. The objective is to allow for full device, first principle modeling of a variety of fusion reactors such as Field Reversed Configuration, Z-Pinch, and Inertial Confinement Fusion machines. Key features include,
 
 - GPU acceleration using NVIDIA [Warp](https://github.com/NVIDIA/warp), (core kernels achieving 95% memory bandwidth utilization🎃).
@@ -8,11 +13,6 @@ Pumpkin Pulse is a python package for scalable GPU accelerated simulations of pl
 - Two fluid MHD model as well a Ideal MHD model.
 - Particle in Cell (PIC) model for kinetic simulations, (Esirkepov current deposition 🎃).
 - Scalable visualization via in-situ rendering image [Phantom Gaze](https://github.com/loliverhennigh/PhantomGaze). Currently 
-
-<div align="center">
-  <img src="https://github.com/loliverhennigh/PumpkinPulse/blob/dev/assets/cover_image.png">
-  <p><strong>🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃</strong></p>
-</div>
 
 # ⚠️ WARNING⚠️ 
 
@@ -45,7 +45,7 @@ Check out videos on my YouTube channel, [Oliver Henigh](https://www.youtube.com/
 
 ### 4 Billion cells on Gaming PC, (128 GB, 1 RTX 4090)
 
-[![Watch the video](https://www.youtube.com/shorts/gtStqHPDXeI)
+[![Watch the video](https://img.youtube.com/vi/gtStqHPDXeI/0.jpg)](https://www.youtube.com/watch?v=gtStqHPDXeI)
 
 ## Fun!
 
