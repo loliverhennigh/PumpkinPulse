@@ -7,8 +7,6 @@ Full device
   <p><strong>🎃 Pumpkin Pulse 🎃</strong></p>
 </div>
 
-[![Watch the video](http://img.youtube.com/vi/875d3_iFTWM/0.jpg)](https://www.youtube.com/watch?v=875d3_iFTWM)
-
 # 
 
 # Installation
@@ -21,6 +19,8 @@ pip install .
 
 # Gallery
 
+Check out videos on my YouTube channel, [Oliver Henigh](https://www.youtube.com/@oliverhennigh451)
+
 ## Science!
 
 ###
@@ -29,7 +29,13 @@ pip install .
 
 ### Exploding Bunnies
 
-### Exploding Pumpkins
+[![Watch the video](http://img.youtube.com/vi/FoYjATimtJo/0.jpg)](https://www.youtube.com/watch?v=FoYjATimtJo)
+
+
+### Imploding Pumpkins
+
+[![Watch the video](http://img.youtube.com/vi/875d3_iFTWM/0.jpg)](https://www.youtube.com/watch?v=875d3_iFTWM)
+
 
 
 
