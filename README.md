@@ -13,7 +13,7 @@ Video of pumpkin
   height="315"
   src="https://www.youtube.com/watch?v=875d3_iFTWM"
   frameborder="0"
-  allow="Imploding Pumkin"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
   allowfullscreen>
 </iframe>
 
