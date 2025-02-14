@@ -1,13 +1,16 @@
 # 🎃 Pumpkin Pulse 🎃
 
-Full device 
+Pumpkin Pulse is a python package for scalable GPU accelerated simulations of plasma. The objective is to allow for full device, first principle modeling of a variety of fusion reactors such as Field Reversed Configuration, Z-Pinch, and Inertial Confinement Fusion machines. Key features include,
+
+- Full 3D electromagnetic field solver using the Finite Difference Time Domain method, (2nd order in space, 2nd order in time 🎃).
+- GPU acceleration using NVIDIA Warp, (core kernels achieving 95% memory bandwidth utilization 🎃).
+- Scalable to multiple GPUs and nodes using MPI, (linear weak scaling proven up to 8 nodes 🎃).
+-
 
 <div align="center">
   <img src="https://github.com/loliverhennigh/PumpkinPulse/blob/dev/assets/cover_image.png">
-  <p><strong>🎃 Pumpkin Pulse 🎃</strong></p>
+  <p><strong>🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃 🎃</strong></p>
 </div>
-
-# 
 
 # Installation
 
