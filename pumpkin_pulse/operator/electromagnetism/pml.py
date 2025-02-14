@@ -3,9 +3,8 @@
 from typing import Union
 import warp as wp
 
-from pumpkin_pulse.data.field import Fieldfloat32, Fielduint8
-from pumpkin_pulse.operator.operator import Operator
-from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexing_uint8
+from sciops.operator.operator import Operator
+from sciops.operator.utils.indexing import periodic_indexing, periodic_indexing_uint8
 
 # PML ordering (36 elements)
 # ( 0,  1,  2): phi_e
@@ -20,15 +19,17 @@ from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexi
 # (27, 28, 29): ce
 # (30, 31, 32): bh
 # (33, 34, 35): ch
+# Ref: https://github.com/flaport/fdtd
+# Awesome resource!!! Thanks @flaport!!!!
 
-class InitializePML(Operator):
+class PMLInitializer(Operator):
     """
     Initialize PML operator
     """
 
     @wp.kernel
     def _initialize_pml_layer(
-        pml_layer: Fieldfloat32,
+        pml_layer: wp.array4d(dtype=wp.float32),
         direction: wp.vec3f,
         thickness: wp.int32,
         courant_number: wp.float32,
@@ -49,8 +50,8 @@ class InitializePML(Operator):
             step_e = - wp.dot(ijk_f, direction) + 0.5
             step_h = - wp.dot(ijk_f, direction) + 1.0
             
-            #if i == thickness - 1: # TODO: Hack to match FDTD, check if it is correct
-            #    step_h = 0.0
+            if i == thickness - 1: # TODO: Hack to match FDTD, check if it is correct
+                step_h = 0.0
 
         # Get sigma_e and sigma_h
         sigma_e = (40.0 * step_e ** 3.0) / (wp.float32(thickness) + 1.0) ** 4.0
@@ -90,27 +91,27 @@ class InitializePML(Operator):
         )
 
         # Set PML layer
-        pml_layer.data[24, i, j, k] = be[0]
-        pml_layer.data[25, i, j, k] = be[1]
-        pml_layer.data[26, i, j, k] = be[2]
-        pml_layer.data[27, i, j, k] = ce[0]
-        pml_layer.data[28, i, j, k] = ce[1]
-        pml_layer.data[29, i, j, k] = ce[2]
-        pml_layer.data[30, i, j, k] = bh[0]
-        pml_layer.data[31, i, j, k] = bh[1]
-        pml_layer.data[32, i, j, k] = bh[2]
-        pml_layer.data[33, i, j, k] = ch[0]
-        pml_layer.data[34, i, j, k] = ch[1]
-        pml_layer.data[35, i, j, k] = ch[2]
+        pml_layer[24, i, j, k] = be[0]
+        pml_layer[25, i, j, k] = be[1]
+        pml_layer[26, i, j, k] = be[2]
+        pml_layer[27, i, j, k] = ce[0]
+        pml_layer[28, i, j, k] = ce[1]
+        pml_layer[29, i, j, k] = ce[2]
+        pml_layer[30, i, j, k] = bh[0]
+        pml_layer[31, i, j, k] = bh[1]
+        pml_layer[32, i, j, k] = bh[2]
+        pml_layer[33, i, j, k] = ch[0]
+        pml_layer[34, i, j, k] = ch[1]
+        pml_layer[35, i, j, k] = ch[2]
 
     def __call__(
         self,
-        pml_layer: Fieldfloat32,
+        pml_layer: wp.array4d(dtype=wp.float32),
         direction: wp.vec3f,
         thickness: int,
         courant_number: float,
         k=1.0,
-        a=1.0e-3,
+        a=1.0e-8,
     ):
 
         # Launch kernel
@@ -124,7 +125,7 @@ class InitializePML(Operator):
                 wp.float32(k),
                 wp.float32(a),
             ],
-            dim=pml_layer.shape,
+            dim=pml_layer.shape[1:],
         )
         return pml_layer
 
@@ -159,12 +160,13 @@ class PMLElectricFieldUpdate(Operator):
 
         return wp.vec3f(eps_x, eps_y, eps_z)
 
-
     @wp.kernel
     def _pml_electric_field_update(
-        electric_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
-        id_field: Fielduint8,
+        electric_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.uint8),
+        spacing: wp.vec3f,
+        pml_layer_offset: wp.vec3i,
         eps_mapping: wp.array(dtype=wp.float32),
         dt: wp.float32,
     ):
@@ -172,19 +174,26 @@ class PMLElectricFieldUpdate(Operator):
         # Get index
         i, j, k = wp.tid()
 
+        # Get shape
+        shape = wp.vec3i(
+            electric_field.shape[1],
+            electric_field.shape[2],
+            electric_field.shape[3],
+        )
+
         # Get electromagnetic field index
-        i_e = i + pml_layer.offset[0] - electric_field.offset[0]
-        j_e = j + pml_layer.offset[1] - electric_field.offset[1]
-        k_e = k + pml_layer.offset[2] - electric_field.offset[2]
+        i_e = i + pml_layer_offset[0]
+        j_e = j + pml_layer_offset[1]
+        k_e = k + pml_layer_offset[2]
 
         # Get material id
-        id_0_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e - 1, j_e - 1, k_e)
-        id_0_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e - 1, j_e, k_e - 1)
-        id_0_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e - 1, j_e, k_e)
-        id_1_0_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e, j_e - 1, k_e - 1)
-        id_1_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e, j_e - 1, k_e)
-        id_1_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e, j_e, k_e - 1)
-        id_1_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_e, j_e, k_e)
+        id_0_0_1 = periodic_indexing_uint8(id_field, shape, 0, i_e - 1, j_e - 1, k_e)
+        id_0_1_0 = periodic_indexing_uint8(id_field, shape, 0, i_e - 1, j_e, k_e - 1)
+        id_0_1_1 = periodic_indexing_uint8(id_field, shape, 0, i_e - 1, j_e, k_e)
+        id_1_0_0 = periodic_indexing_uint8(id_field, shape, 0, i_e, j_e - 1, k_e - 1)
+        id_1_0_1 = periodic_indexing_uint8(id_field, shape, 0, i_e, j_e - 1, k_e)
+        id_1_1_0 = periodic_indexing_uint8(id_field, shape, 0, i_e, j_e, k_e - 1)
+        id_1_1_1 = periodic_indexing_uint8(id_field, shape, 0, i_e, j_e, k_e)
 
         # Get eps
         eps = PMLElectricFieldUpdate._get_eps(
@@ -200,28 +209,30 @@ class PMLElectricFieldUpdate(Operator):
 
         # Get phi e and phi h
         phi_e = wp.vec3f(
-            pml_layer.data[0, i, j, k],
-            pml_layer.data[1, i, j, k],
-            pml_layer.data[2, i, j, k],
+            pml_layer[0, i, j, k],
+            pml_layer[1, i, j, k],
+            pml_layer[2, i, j, k],
         )
 
         # Get c_eh
         _denom = 2.0 * eps
-        c_eh = (2.0 * dt) / wp.cw_mul(electric_field.spacing, _denom)
+        c_eh = (2.0 * dt) / wp.cw_mul(spacing, _denom)
 
         # Get addition to electric field
         e_add = wp.cw_mul(c_eh, phi_e)
 
         # Adjust electromagnetic field
-        electric_field.data[0, i_e, j_e, k_e] += e_add[0]
-        electric_field.data[1, i_e, j_e, k_e] += e_add[1]
-        electric_field.data[2, i_e, j_e, k_e] += e_add[2]
+        electric_field[0, i_e, j_e, k_e] += e_add[0]
+        electric_field[1, i_e, j_e, k_e] += e_add[1]
+        electric_field[2, i_e, j_e, k_e] += e_add[2]
 
     def __call__(
         self,
-        electric_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
-        id_field: Fielduint8,
+        electric_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.uint8),
+        spacing: wp.vec3f,
+        pml_layer_offset: wp.vec3i,
         eps_mapping: Union[wp.array, wp.constant],
         dt: float,
     ):
@@ -233,10 +244,12 @@ class PMLElectricFieldUpdate(Operator):
                 electric_field,
                 pml_layer,
                 id_field,
+                spacing,
+                pml_layer_offset,
                 eps_mapping,
                 wp.float32(dt),
             ],
-            dim=pml_layer.shape,
+            dim=pml_layer.shape[1:],
         )
         return electric_field
 
@@ -277,9 +290,11 @@ class PMLMagneticFieldUpdate(Operator):
 
     @wp.kernel
     def _pml_magnetic_field_update(
-        magnetic_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
-        id_field: Fielduint8,
+        magnetic_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.uint8),
+        spacing: wp.vec3f,
+        pml_layer_offset: wp.vec3i,
         mu_mapping: wp.array(dtype=wp.float32),
         dt: wp.float32,
     ):
@@ -287,16 +302,23 @@ class PMLMagneticFieldUpdate(Operator):
         # Get index
         i, j, k = wp.tid()
 
+        # Get shape
+        shape = wp.vec3i(
+            magnetic_field.shape[1],
+            magnetic_field.shape[2],
+            magnetic_field.shape[3],
+        )
+
         # Get electromagnetic field index
-        i_h = i + pml_layer.offset[0] - magnetic_field.offset[0]
-        j_h = j + pml_layer.offset[1] - magnetic_field.offset[1]
-        k_h = k + pml_layer.offset[2] - magnetic_field.offset[2]
+        i_h = i + pml_layer_offset[0]
+        j_h = j + pml_layer_offset[1]
+        k_h = k + pml_layer_offset[2]
 
         # Get material id
-        id_0_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_h - 1, j_h, k_h)
-        id_1_0_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_h, j_h - 1, k_h)
-        id_1_1_0 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_h, j_h, k_h - 1)
-        id_1_1_1 = periodic_indexing_uint8(id_field.data, id_field.shape, 0, i_h, j_h, k_h)
+        id_0_1_1 = periodic_indexing_uint8(id_field, shape, 0, i_h - 1, j_h, k_h)
+        id_1_0_1 = periodic_indexing_uint8(id_field, shape, 0, i_h, j_h - 1, k_h)
+        id_1_1_0 = periodic_indexing_uint8(id_field, shape, 0, i_h, j_h, k_h - 1)
+        id_1_1_1 = periodic_indexing_uint8(id_field, shape, 0, i_h, j_h, k_h)
 
         # Get mu
         mu = PMLMagneticFieldUpdate._get_mu(
@@ -309,28 +331,30 @@ class PMLMagneticFieldUpdate(Operator):
 
         # Get phi e and phi h
         phi_h = wp.vec3f(
-            pml_layer.data[3, i, j, k],
-            pml_layer.data[4, i, j, k],
-            pml_layer.data[5, i, j, k],
+            pml_layer[3, i, j, k],
+            pml_layer[4, i, j, k],
+            pml_layer[5, i, j, k],
         )
 
         # Get c_he
         _denom = 2.0 * mu
-        c_he = (2.0 * dt) / wp.cw_mul(magnetic_field.spacing, _denom)
+        c_he = (2.0 * dt) / wp.cw_mul(spacing, _denom)
  
         # Get addition to electric field
         h_add = wp.cw_mul(c_he, phi_h)
 
         # Adjust electromagnetic field
-        magnetic_field.data[0, i_h, j_h, k_h] -= h_add[0]
-        magnetic_field.data[1, i_h, j_h, k_h] -= h_add[1]
-        magnetic_field.data[2, i_h, j_h, k_h] -= h_add[2]
+        magnetic_field[0, i_h, j_h, k_h] -= h_add[0]
+        magnetic_field[1, i_h, j_h, k_h] -= h_add[1]
+        magnetic_field[2, i_h, j_h, k_h] -= h_add[2]
 
     def __call__(
         self,
-        magnetic_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
-        id_field: Fielduint8,
+        magnetic_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.uint8),
+        spacing: wp.vec3f,
+        pml_layer_offset: wp.vec3i,
         mu_mapping: Union[wp.array, wp.constant],
         dt: float,
     ):
@@ -342,10 +366,12 @@ class PMLMagneticFieldUpdate(Operator):
                 magnetic_field,
                 pml_layer,
                 id_field,
+                spacing,
+                pml_layer_offset,
                 mu_mapping,
                 wp.float32(dt),
             ],
-            dim=pml_layer.shape,
+            dim=pml_layer.shape[1:],
         )
         return magnetic_field
 
@@ -357,55 +383,63 @@ class PMLPhiEUpdate(Operator):
 
     @wp.kernel
     def _pml_phi_e_update(
-        magnetic_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
+        magnetic_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        pml_layer_offset: wp.vec3i,
     ):
 
         # Get index
         i, j, k = wp.tid()
 
+        # Get shape
+        shape = wp.vec3i(
+            magnetic_field.shape[1],
+            magnetic_field.shape[2],
+            magnetic_field.shape[3],
+        )
+
         # Get electromagnetic field index
-        i_h = i + pml_layer.offset[0] - magnetic_field.offset[0]
-        j_h = j + pml_layer.offset[1] - magnetic_field.offset[1]
-        k_h = k + pml_layer.offset[2] - magnetic_field.offset[2]
+        i_h = i + pml_layer_offset[0]
+        j_h = j + pml_layer_offset[1]
+        k_h = k + pml_layer_offset[2]
 
         # Get needed vectors
         psi_ex = wp.vec3f(
-            pml_layer.data[6, i, j, k],
-            pml_layer.data[7, i, j, k],
-            pml_layer.data[8, i, j, k],
+            pml_layer[6, i, j, k],
+            pml_layer[7, i, j, k],
+            pml_layer[8, i, j, k],
         )
         psi_ey = wp.vec3f(
-            pml_layer.data[9, i, j, k],
-            pml_layer.data[10, i, j, k],
-            pml_layer.data[11, i, j, k],
+            pml_layer[9, i, j, k],
+            pml_layer[10, i, j, k],
+            pml_layer[11, i, j, k],
         )
         psi_ez = wp.vec3f(
-            pml_layer.data[12, i, j, k],
-            pml_layer.data[13, i, j, k],
-            pml_layer.data[14, i, j, k],
+            pml_layer[12, i, j, k],
+            pml_layer[13, i, j, k],
+            pml_layer[14, i, j, k],
         )
         be = wp.vec3f(
-            pml_layer.data[24, i, j, k],
-            pml_layer.data[25, i, j, k],
-            pml_layer.data[26, i, j, k],
+            pml_layer[24, i, j, k],
+            pml_layer[25, i, j, k],
+            pml_layer[26, i, j, k],
         )
         ce = wp.vec3f(
-            pml_layer.data[27, i, j, k],
-            pml_layer.data[28, i, j, k],
-            pml_layer.data[29, i, j, k],
+            pml_layer[27, i, j, k],
+            pml_layer[28, i, j, k],
+            pml_layer[29, i, j, k],
         )
 
         # Get h stencil
-        h_x_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i_h, j_h, k_h)
-        h_x_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i_h, j_h - 1, k_h)
-        h_x_1_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 0, i_h, j_h, k_h - 1)
-        h_y_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i_h, j_h, k_h)
-        h_y_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i_h - 1, j_h, k_h)
-        h_y_1_1_0 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 1, i_h, j_h, k_h - 1)
-        h_z_1_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i_h, j_h, k_h)
-        h_z_0_1_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i_h - 1, j_h, k_h)
-        h_z_1_0_1 = periodic_indexing(magnetic_field.data, magnetic_field.shape, 2, i_h, j_h - 1, k_h)
+        h_x_1_1_1 = periodic_indexing(magnetic_field, shape, 0, i_h, j_h, k_h)
+        h_x_1_0_1 = periodic_indexing(magnetic_field, shape, 0, i_h, j_h - 1, k_h)
+        h_x_1_1_0 = periodic_indexing(magnetic_field, shape, 0, i_h, j_h, k_h - 1)
+        h_y_1_1_1 = periodic_indexing(magnetic_field, shape, 1, i_h, j_h, k_h)
+        h_y_0_1_1 = periodic_indexing(magnetic_field, shape, 1, i_h - 1, j_h, k_h)
+        h_y_1_1_0 = periodic_indexing(magnetic_field, shape, 1, i_h, j_h, k_h - 1)
+        h_z_1_1_1 = periodic_indexing(magnetic_field, shape, 2, i_h, j_h, k_h)
+        h_z_0_1_1 = periodic_indexing(magnetic_field, shape, 2, i_h - 1, j_h, k_h)
+        h_z_1_0_1 = periodic_indexing(magnetic_field, shape, 2, i_h, j_h - 1, k_h)
 
         # Update psi_e with be
         psi_ex = wp.cw_mul(be, psi_ex)
@@ -430,23 +464,24 @@ class PMLPhiEUpdate(Operator):
         phi_e[2] = psi_ez[0] - psi_ez[1]
 
         # Update all values
-        pml_layer.data[0, i, j, k] = phi_e[0]
-        pml_layer.data[1, i, j, k] = phi_e[1]
-        pml_layer.data[2, i, j, k] = phi_e[2]
-        pml_layer.data[6, i, j, k] = psi_ex[0]
-        pml_layer.data[7, i, j, k] = psi_ex[1]
-        pml_layer.data[8, i, j, k] = psi_ex[2]
-        pml_layer.data[9, i, j, k] = psi_ey[0]
-        pml_layer.data[10, i, j, k] = psi_ey[1]
-        pml_layer.data[11, i, j, k] = psi_ey[2]
-        pml_layer.data[12, i, j, k] = psi_ez[0]
-        pml_layer.data[13, i, j, k] = psi_ez[1]
-        pml_layer.data[14, i, j, k] = psi_ez[2]
+        pml_layer[0, i, j, k] = phi_e[0]
+        pml_layer[1, i, j, k] = phi_e[1]
+        pml_layer[2, i, j, k] = phi_e[2]
+        pml_layer[6, i, j, k] = psi_ex[0]
+        pml_layer[7, i, j, k] = psi_ex[1]
+        pml_layer[8, i, j, k] = psi_ex[2]
+        pml_layer[9, i, j, k] = psi_ey[0]
+        pml_layer[10, i, j, k] = psi_ey[1]
+        pml_layer[11, i, j, k] = psi_ey[2]
+        pml_layer[12, i, j, k] = psi_ez[0]
+        pml_layer[13, i, j, k] = psi_ez[1]
+        pml_layer[14, i, j, k] = psi_ez[2]
 
     def __call__(
         self,
-        magnetic_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
+        magnetic_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        pml_layer_offset: wp.vec3i,
     ):
 
         # Launch kernel
@@ -455,8 +490,9 @@ class PMLPhiEUpdate(Operator):
             inputs=[
                 magnetic_field,
                 pml_layer,
+                pml_layer_offset,
             ],
-            dim=pml_layer.shape,
+            dim=pml_layer.shape[1:],
         )
         return pml_layer
 
@@ -469,55 +505,63 @@ class PMLPhiHUpdate(Operator):
 
     @wp.kernel
     def _update_pml_phi_h(
-        electric_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
+        electric_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        pml_layer_offset: wp.vec3i,
     ):
 
         # Get index
         i, j, k = wp.tid()
 
+        # Get shape
+        shape = wp.vec3i(
+            electric_field.shape[1],
+            electric_field.shape[2],
+            electric_field.shape[3],
+        )
+
         # Get electromagnetic field index
-        i_e = i + pml_layer.offset[0] - electric_field.offset[0]
-        j_e = j + pml_layer.offset[1] - electric_field.offset[1]
-        k_e = k + pml_layer.offset[2] - electric_field.offset[2]
+        i_e = i + pml_layer_offset[0]
+        j_e = j + pml_layer_offset[1]
+        k_e = k + pml_layer_offset[2]
 
         # Get needed vectors
         psi_hx = wp.vec3f(
-            pml_layer.data[15, i, j, k],
-            pml_layer.data[16, i, j, k],
-            pml_layer.data[17, i, j, k],
+            pml_layer[15, i, j, k],
+            pml_layer[16, i, j, k],
+            pml_layer[17, i, j, k],
         )
         psi_hy = wp.vec3f(
-            pml_layer.data[18, i, j, k],
-            pml_layer.data[19, i, j, k],
-            pml_layer.data[20, i, j, k],
+            pml_layer[18, i, j, k],
+            pml_layer[19, i, j, k],
+            pml_layer[20, i, j, k],
         )
         psi_hz = wp.vec3f(
-            pml_layer.data[21, i, j, k],
-            pml_layer.data[22, i, j, k],
-            pml_layer.data[23, i, j, k],
+            pml_layer[21, i, j, k],
+            pml_layer[22, i, j, k],
+            pml_layer[23, i, j, k],
         )
         bh = wp.vec3f(
-            pml_layer.data[30, i, j, k],
-            pml_layer.data[31, i, j, k],
-            pml_layer.data[32, i, j, k],
+            pml_layer[30, i, j, k],
+            pml_layer[31, i, j, k],
+            pml_layer[32, i, j, k],
         )
         ch = wp.vec3f(
-            pml_layer.data[33, i, j, k],
-            pml_layer.data[34, i, j, k],
-            pml_layer.data[35, i, j, k],
+            pml_layer[33, i, j, k],
+            pml_layer[34, i, j, k],
+            pml_layer[35, i, j, k],
         )
 
         # Get h stencil
-        e_x_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, i_e, j_e, k_e)
-        e_x_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 0, i_e, j_e + 1, k_e)
-        e_x_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 0, i_e, j_e, k_e + 1)
-        e_y_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, i_e, j_e, k_e)
-        e_y_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 1, i_e + 1, j_e, k_e)
-        e_y_0_0_1 = periodic_indexing(electric_field.data, electric_field.shape, 1, i_e, j_e, k_e + 1)
-        e_z_0_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i_e, j_e, k_e)
-        e_z_1_0_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i_e + 1, j_e, k_e)
-        e_z_0_1_0 = periodic_indexing(electric_field.data, electric_field.shape, 2, i_e, j_e + 1, k_e)
+        e_x_0_0_0 = periodic_indexing(electric_field, shape, 0, i_e, j_e, k_e)
+        e_x_0_1_0 = periodic_indexing(electric_field, shape, 0, i_e, j_e + 1, k_e)
+        e_x_0_0_1 = periodic_indexing(electric_field, shape, 0, i_e, j_e, k_e + 1)
+        e_y_0_0_0 = periodic_indexing(electric_field, shape, 1, i_e, j_e, k_e)
+        e_y_1_0_0 = periodic_indexing(electric_field, shape, 1, i_e + 1, j_e, k_e)
+        e_y_0_0_1 = periodic_indexing(electric_field, shape, 1, i_e, j_e, k_e + 1)
+        e_z_0_0_0 = periodic_indexing(electric_field, shape, 2, i_e, j_e, k_e)
+        e_z_1_0_0 = periodic_indexing(electric_field, shape, 2, i_e + 1, j_e, k_e)
+        e_z_0_1_0 = periodic_indexing(electric_field, shape, 2, i_e, j_e + 1, k_e)
 
         # Update psi_h with bh
         psi_hx = wp.cw_mul(bh, psi_hx)
@@ -525,13 +569,13 @@ class PMLPhiHUpdate(Operator):
         psi_hz = wp.cw_mul(bh, psi_hz)
 
         # Update psi_h with h
-        if i != pml_layer.shape[0] - 1:
+        if i != pml_layer.shape[1] - 1:
             psi_hy[0] += (e_z_1_0_0 - e_z_0_0_0) * ch[0]
             psi_hz[0] += (e_y_1_0_0 - e_y_0_0_0) * ch[0]
-        if j != pml_layer.shape[1] - 1:
+        if j != pml_layer.shape[2] - 1:
             psi_hx[1] += (e_z_0_1_0 - e_z_0_0_0) * ch[1]
             psi_hz[1] += (e_x_0_1_0 - e_x_0_0_0) * ch[1]
-        if k != pml_layer.shape[2] - 1:
+        if k != pml_layer.shape[3] - 1:
             psi_hx[2] += (e_y_0_0_1 - e_y_0_0_0) * ch[2]
             psi_hy[2] += (e_x_0_0_1 - e_x_0_0_0) * ch[2]
 
@@ -542,23 +586,24 @@ class PMLPhiHUpdate(Operator):
         phi_h[2] = psi_hz[0] - psi_hz[1]
 
         # Update all values
-        pml_layer.data[3, i, j, k] = phi_h[0]
-        pml_layer.data[4, i, j, k] = phi_h[1]
-        pml_layer.data[5, i, j, k] = phi_h[2]
-        pml_layer.data[15, i, j, k] = psi_hx[0]
-        pml_layer.data[16, i, j, k] = psi_hx[1]
-        pml_layer.data[17, i, j, k] = psi_hx[2]
-        pml_layer.data[18, i, j, k] = psi_hy[0]
-        pml_layer.data[19, i, j, k] = psi_hy[1]
-        pml_layer.data[20, i, j, k] = psi_hy[2]
-        pml_layer.data[21, i, j, k] = psi_hz[0]
-        pml_layer.data[22, i, j, k] = psi_hz[1]
-        pml_layer.data[23, i, j, k] = psi_hz[2]
+        pml_layer[3, i, j, k] = phi_h[0]
+        pml_layer[4, i, j, k] = phi_h[1]
+        pml_layer[5, i, j, k] = phi_h[2]
+        pml_layer[15, i, j, k] = psi_hx[0]
+        pml_layer[16, i, j, k] = psi_hx[1]
+        pml_layer[17, i, j, k] = psi_hx[2]
+        pml_layer[18, i, j, k] = psi_hy[0]
+        pml_layer[19, i, j, k] = psi_hy[1]
+        pml_layer[20, i, j, k] = psi_hy[2]
+        pml_layer[21, i, j, k] = psi_hz[0]
+        pml_layer[22, i, j, k] = psi_hz[1]
+        pml_layer[23, i, j, k] = psi_hz[2]
 
     def __call__(
         self,
-        electric_field: Fieldfloat32,
-        pml_layer: Fieldfloat32,
+        electric_field: wp.array4d(dtype=wp.float32),
+        pml_layer: wp.array4d(dtype=wp.float32),
+        pml_layer_offset: wp.vec3i,
     ):
     
         # Launch kernel
@@ -567,7 +612,8 @@ class PMLPhiHUpdate(Operator):
             inputs=[
                 electric_field,
                 pml_layer,
+                pml_layer_offset,
             ],
-            dim=pml_layer.shape,
+            dim=pml_layer.shape[1:],
         )
         return pml_layer

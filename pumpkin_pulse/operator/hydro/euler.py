@@ -1,5 +1,3 @@
-# Base class for FV euler solver
-
 from typing import Union
 import warp as wp
 

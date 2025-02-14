@@ -1,2 +1,0 @@
-from pumpkin_pulse.operator.material_property_setter.sdf import SDFMaterialPropertySetter, SphereMaterialPropertySetter, BoxMaterialPropertySetter
-from pumpkin_pulse.operator.material_property_setter.mesh import MeshMaterialPropertySetter

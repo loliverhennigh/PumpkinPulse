@@ -2,7 +2,6 @@
 import warp as wp
 import numpy as np
 
-from pumpkin_pulse.data.field import Fielduint8
 from pumpkin_pulse.operator.operator import Operator
 
 class Tube(Operator):

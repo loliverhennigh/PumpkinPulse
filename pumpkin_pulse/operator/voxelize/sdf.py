@@ -3,9 +3,7 @@
 from typing import Union
 import warp as wp
 
-from pumpkin_pulse.data.field import Fielduint8
 from pumpkin_pulse.operator.operator import Operator
-from pumpkin_pulse.functional.indexing import periodic_indexing, periodic_indexing_uint8
 
 class SignedDistanceFunction(Operator):
     """
@@ -177,17 +175,19 @@ class SignedDistanceFunction(Operator):
         # Make kernels
         @wp.kernel
         def _set_sdf(
-            id_field: Fielduint8,
-            set_id: wp.uint8,
+            id_field: wp.array4d(dtype=wp.int16),
+            origin: wp.vec3,
+            spacing: wp.vec3,
+            set_id: wp.int16,
         ):
             # get index
             i, j, k = wp.tid()
 
             # Get cell centered position
             position = wp.vec3(
-                wp.float32(i) * id_field.spacing[0] + id_field.origin[0] + 0.5 * id_field.spacing[0],
-                wp.float32(j) * id_field.spacing[1] + id_field.origin[1] + 0.5 * id_field.spacing[1],
-                wp.float32(k) * id_field.spacing[2] + id_field.origin[2] + 0.5 * id_field.spacing[2],
+                wp.float32(i) * spacing[0] + origin[0] + 0.5 * spacing[0],
+                wp.float32(j) * spacing[1] + origin[1] + 0.5 * spacing[1],
+                wp.float32(k) * spacing[2] + origin[2] + 0.5 * spacing[2],
             )
 
             # Compute sdf
@@ -195,21 +195,28 @@ class SignedDistanceFunction(Operator):
 
             # Set id
             if sdf < 0.0:
-                id_field.data[0, i, j, k] = set_id
+                id_field[0, i, j, k] = set_id
 
         self._set_sdf = _set_sdf
 
     def __call__(
         self,
-        id_field: Fielduint8,
+        id_field: wp.array4d(dtype=wp.int16),
+        origin: wp.vec3,
+        spacing: wp.vec3,
         set_id: int,
     ):
 
         # Launch kernel
         wp.launch(
             self._set_sdf,
-            inputs=[id_field, set_id],
-            dim=id_field.shape,
+            inputs=[
+                id_field,
+                origin,
+                spacing,
+                set_id,
+            ],
+            dim=id_field.shape[1:],
         )
 
         return id_field

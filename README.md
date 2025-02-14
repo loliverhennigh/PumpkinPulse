@@ -1,6 +1,17 @@
-# Pumpkin Pulse
+# 🎃 Pumpkin Pulse 🎃
 
-General purpose code for MHD and PIC simulations using Warp on GPU, (https://github.com/NVIDIA/warp).
+<div align="center">
+  <img src="https://github.com/loliverhennigh/PumpkinPulse/assets/cover_image.png">
+  <p><strong>🎃 Pumpkin Pulse 🎃</strong></p>
+
+# Gallery
+
+## Science!
+
+
+# Fun!
+
+
 
 Currently a work in progress but posting videos here, https://www.youtube.com/@oliverhennigh451.
 
