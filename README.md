@@ -8,16 +8,14 @@ Full device
 </div>
 
 Video of pumpkin
-<div align="center">
-  <iframe
-      width="560"
-      height="315"
-      src="https://www.youtube.com/watch?v=875d3_iFTWM"
-      frameborder="0"
-      allow="Imploding Pumkin"
-      allowfullscreen>
-    </iframe>
-</div>
+<iframe
+  width="560"
+  height="315"
+  src="https://www.youtube.com/watch?v=875d3_iFTWM"
+  frameborder="0"
+  allow="Imploding Pumkin"
+  allowfullscreen>
+</iframe>
 
 
 # 
