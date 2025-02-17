@@ -300,4 +300,83 @@ class YeeMagneticFieldUpdate(Operator):
         )
         return magnetic_field
 
+class SetElectricField(Operator):
 
+    @wp.kernel
+    def _set_electric_field(
+        electric_field: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.int16),
+        id_value: wp.int16,
+        value: wp.float32,
+        direction: wp.int32,
+    ):
+        # Get index
+        i, j, k = wp.tid()
+        i += 1
+        j += 1
+        k += 1
+
+        # Depending on the direction
+        if direction == 0:
+
+            # Get id value in stencil
+            id_1 = id_field[0, i, j, k]
+            id_2 = id_field[0, i, j, k - 1]
+            id_3 = id_field[0, i, j - 1, k]
+            id_4 = id_field[0, i, j - 1, k - 1]
+
+        if direction == 1:
+
+            # Get id value in stencil
+            id_1 = id_field[0, i, j, k]
+            id_2 = id_field[0, i - 1, j, k]
+            id_3 = id_field[0, i, j, k - 1]
+            id_4 = id_field[0, i - 1, j, k - 1]
+
+        if direction == 2:
+
+            # Get id value in stencil
+            id_1 = id_field[0, i, j, k]
+            id_2 = id_field[0, i, j - 1, k]
+            id_3 = id_field[0, i - 1, j, k]
+            id_4 = id_field[0, i - 1, j - 1, k]
+
+        # Get quantity of id value in stencil that is equal to the id value
+        count = 0
+        if id_1 == id_value:
+            count += 1
+        if id_2 == id_value:
+            count += 1
+        if id_3 == id_value:
+            count += 1
+        if id_4 == id_value:
+            count += 1
+
+        # Check if count is greater than 0
+        if count > 0:
+
+            # Set the electric field
+            electric_field[direction, i, j, k] = value * (wp.float32(count) / 4.0)
+
+    def __call__(
+        self,
+        electric_field: wp.array4d(dtype=wp.float32),
+        id_field: wp.array4d(dtype=wp.int16),
+        id_value: wp.int16,
+        value: float,
+        direction: int,
+    ):
+        # Launch kernel
+        wp.launch(
+            self._set_electric_field,
+            inputs=[
+                electric_field,
+                id_field,
+                id_value,
+                value,
+                direction,
+            ],
+            dim=[s - 1 for s in electric_field.shape],
+        )
+
+        return electric_field
