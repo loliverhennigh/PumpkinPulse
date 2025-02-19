@@ -27,11 +27,12 @@ simulations with billions of cells can be achieved on a single node.
 Bellow is a table and of various machines and their corresponding cell counts and updates per second. These are estimates based on the current state of the code and memory capacity/bandwidth of the machines.
 
 | Machine | Cell Count Two Fluid (Billions) | Two Fluid Cell Updates Per Second (Billions/s) | Cell Count PIC (Assuming 30 particles per cell) (Billions)| PIC Cell Updates Per Second (Billions/s)|
-| --- | --- |
+| --- | --- | --- | --- | --- |
 | Gaming PC (1 RTX 5090), Pcie 5.0, 128 GB | 1.17 | 4.1 | 0.167 | 0.136 |
 | [Digits](https://www.nvidia.com/en-us/project-digits/), 128 GB | 1.17 | Unkown (probably ~1-2) | 0.167 | Unkown (probably ~0.05) |
 | [GH200](https://www.nvidia.com/en-us/data-center/grace-hopper-superchip/), 480 GB | 4.39 | 8.2 | 0.32 | 0.27 |
 | [NVL72](https://www.nvidia.com/en-us/data-center/gb200-nvl72/), 30 TB | 274.7 | 1180.8 | 9.1 | 40.8 |
+
 
 
 # ⚠️ WARNING⚠️ 
