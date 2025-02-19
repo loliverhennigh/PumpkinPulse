@@ -28,7 +28,6 @@ Bellow is a table and of various machines and their corresponding cell counts.
 
 # ⚠️ WARNING⚠️ 
 
-If you are seeing this its probably because you work at Helion Energy and I reached out.
 Currently Pumpkin Pulse is under going a major rewrite in the default `dev` branch.
 This branch does not have all of the features mentioned above however in the `main` branch you can find the older much messier version of the code.
 The `main` branch was basically a sketch of the core algorithms needed such as wall and collision modeling, perfect matched layers, particle sorting and current deposition, etc... You can see many of these present in the bellow gallery of videos.
@@ -47,6 +46,10 @@ pip install .
 Check out videos on my YouTube channel, [Oliver Henigh](https://www.youtube.com/@oliverhennigh451)
 
 ## Science!
+
+### Field Reversed Configuration
+
+[![Watch the video](http://img.youtube.com/vi/OGnGGQSjQHo/0.jpg)](https://www.youtube.com/watch?v=OGnGGQSjQHo)
 
 ###
 
